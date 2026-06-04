@@ -1,0 +1,13 @@
+adbutils==2.12.0
+certifi==2026.5.20
+charset-normalizer==3.4.7
+decorator==5.3.1
+deprecation==2.1.0
+idna==3.18
+lxml==6.1.1
+packaging==26.2
+pillow==12.2.0
+requests==2.34.2
+retry2==0.9.5
+uiautomator2==3.5.2
+urllib3==2.7.0
