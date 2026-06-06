@@ -22,9 +22,15 @@ TEXT_STREAKS = "Streaks"
 TEXT_CHECKIN = "Check in"
 
 # ── Timing (seconds) ──────────────────────────────────────────────
-BACK_WAIT        = 2.5   # Pause after pressing back
-REWARDS_READ_WAIT = 4    # Hold time per reward card to register points
-REWARDS_PAGE_TIMEOUT = 15  # Max wait for Rewards WebView to load
+BACK_WAIT            = 2.5  # Pause after pressing back
+REWARDS_READ_WAIT    = 5    # Hold time per reward card to register points
+REWARDS_PAGE_TIMEOUT = 15   # Max wait for Rewards WebView to load
+LAUNCH_SETTLE_WAIT   = 3    # Wait after Bing reaches foreground for UI to render
+HOME_SETTLE_WAIT     = 2    # Wait after home screen confirmed for widgets to draw
+
+# ── Popup detection & dismissal ────────────────────────────────────
+POPUP_CONTAINER_ID = "android:id/parentPanel"               # Generic Android dialog wrapper
+POPUP_CLOSE_ID     = "com.microsoft.bing:id/do_you_like_close"  # Bing feedback popup close btn
 
 # ── Retry limits ──────────────────────────────────────────────────
 MAX_MISSES     = 3   # Max consecutive misses before giving up on reward cards

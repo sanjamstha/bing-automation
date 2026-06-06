@@ -23,7 +23,7 @@ from config import (
     REWARDS_PAGE_TIMEOUT,
     MAX_MISSES,
 )
-from core.device import log, go_back_to_home
+from core.device import log, go_back_to_home, dismiss_popup
 
 
 # ── Rewards page navigation ────────────────────────────────────────
@@ -206,6 +206,10 @@ def run(d):
     Assumes Bing is running and the home screen is confirmed before calling.
     Returns a result dict with keys: checkin, daily_collected, more_collected.
     """
+    # Step 0: Clear any popup that may have appeared since startup
+    log("\n[0/3] Checking for popups before opening Rewards...")
+    dismiss_popup(d)
+
     # Step 1: Open Rewards page
     log("\n[1/3] Opening Rewards page...")
     if not open_rewards_page(d):

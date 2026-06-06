@@ -10,6 +10,10 @@ from config import (
     HOME_ACTIVITY,
     BACK_BTN_ID,
     BACK_WAIT,
+    LAUNCH_SETTLE_WAIT,
+    HOME_SETTLE_WAIT,
+    POPUP_CONTAINER_ID,
+    POPUP_CLOSE_ID,
 )
 
 
@@ -52,6 +56,8 @@ def launch_bing(d):
         log("         Is Bing installed? Run: adb shell pm list packages | findstr bing")
         return False
     log("  Bing foreground confirmed ✓")
+    log(f"  Settling for {LAUNCH_SETTLE_WAIT}s while UI renders...")
+    time.sleep(LAUNCH_SETTLE_WAIT)
     return True
 
 
@@ -65,6 +71,8 @@ def ensure_home_screen(d):
     activity = d.app_current().get("activity", "")
     if HOME_ACTIVITY in activity:
         log("  Home screen confirmed ✓")
+        log(f"  Settling for {HOME_SETTLE_WAIT}s while widgets draw...")
+        time.sleep(HOME_SETTLE_WAIT)
         return True
 
     log("  Wrong screen — force-launching home...")
@@ -76,12 +84,61 @@ def ensure_home_screen(d):
     while time.time() < deadline:
         if HOME_ACTIVITY in d.app_current().get("activity", ""):
             log("  Home screen ready ✓")
-            time.sleep(2)
+            log(f"  Settling for {HOME_SETTLE_WAIT}s while widgets draw...")
+            time.sleep(HOME_SETTLE_WAIT)
             return True
         time.sleep(0.8)
 
     log("  [FAIL] Could not reach home screen")
     return False
+
+
+def dismiss_popup(d):
+    """
+    Detects and dismisses any blocking popup on the current screen.
+
+    Strategy (two-pass):
+      Pass 1 — Cold relaunch: if a popup is detected, stop and cold-start
+               Bing (same as the startup sequence). This clears most transient
+               dialogs without needing to know their specific structure.
+      Pass 2 — Targeted tap: if the popup survived the relaunch, fall back to
+               clicking the known close button by resource-id. Extend this list
+               as new popup types are encountered.
+
+    Detection uses android:id/parentPanel — the standard Android AlertDialog
+    wrapper present in all system-style dialogs including the Bing feedback popup.
+    """
+    if not d(resourceId=POPUP_CONTAINER_ID).exists:
+        return  # No popup — nothing to do
+
+    log("  [POPUP] Dialog detected — attempting cold relaunch to clear...")
+    d.app_stop(BING_PACKAGE)
+    time.sleep(1)
+    d.app_start(BING_PACKAGE)
+    d.app_wait(BING_PACKAGE, front=True, timeout=30)
+    time.sleep(LAUNCH_SETTLE_WAIT)
+
+    # Pass 2: check if popup survived the relaunch
+    if not d(resourceId=POPUP_CONTAINER_ID).exists:
+        log("  [POPUP] Cleared by relaunch ✓")
+        return
+
+    log("  [POPUP] Still visible after relaunch — attempting targeted dismiss...")
+
+    # Known close buttons — add new resource-ids here as more popups are found
+    close_targets = [
+        POPUP_CLOSE_ID,                         # Bing feedback dialog (do_you_like_close)
+        "com.microsoft.bing:id/dialog_close",   # Generic Bing dialog close (future-proofing)
+    ]
+    for res_id in close_targets:
+        btn = d(resourceId=res_id)
+        if btn.exists:
+            btn.click()
+            log(f"  [POPUP] Dismissed via {res_id} ✓")
+            time.sleep(1)
+            return
+
+    log("  [POPUP] Could not dismiss — no known close button found. Continuing anyway.")
 
 
 def go_back_to_home(d):

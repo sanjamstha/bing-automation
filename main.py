@@ -8,7 +8,7 @@ Menu options:
   0 — Exit
 """
 
-from core.device import connect, launch_bing, ensure_home_screen, log
+from core.device import connect, launch_bing, ensure_home_screen, dismiss_popup, log
 from tasks import daily, articles
 
 
@@ -50,6 +50,9 @@ def _startup(d):
     if not ensure_home_screen(d):
         log("[ABORT] Could not confirm home screen.")
         return False
+
+    log("[STARTUP] Checking for popups...")
+    dismiss_popup(d)
 
     return True
 
