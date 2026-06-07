@@ -34,7 +34,7 @@ POPUP_CLOSE_ID     = "com.microsoft.bing:id/do_you_like_close"  # Bing feedback 
 
 # ── Retry limits ──────────────────────────────────────────────────
 MAX_MISSES     = 3   # Max consecutive misses before giving up on reward cards
-MAX_FAILS      = 5   # Max consecutive failures before aborting article read loop
+MAX_FAILS      = 3   # Max consecutive failures before aborting article read loop
 
 # ── Article reader defaults ────────────────────────────────────────
 DEFAULT_ARTICLE_COUNT    = 11

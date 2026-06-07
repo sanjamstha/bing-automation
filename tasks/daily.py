@@ -13,6 +13,7 @@ Check-in outcomes:
 import time
 
 from config import (
+    BING_PACKAGE,
     REWARDS_CARD_ID,
     REWARDS_CARD_TITLE,
     REWARDS_CARD_DESC,
@@ -23,7 +24,7 @@ from config import (
     REWARDS_PAGE_TIMEOUT,
     MAX_MISSES,
 )
-from core.device import log, go_back_to_home, dismiss_popup
+from core.device import log, go_back_to_home, dismiss_popup, launch_bing, ensure_home_screen
 
 
 # ── Rewards page navigation ────────────────────────────────────────
@@ -157,16 +158,35 @@ def _find_card_nodes(d, earn_keyword):
     return results
 
 
-def collect_cards(d, earn_keyword, total_cards, section_label):
-    """
-    Clicks reward cards matched by 'earn N points' in content-desc.
-    Scrolls down when no visible cards are found.
-    """
-    geo        = _get_geometry(d)
-    collected  = 0
-    miss_count = 0
+def _on_rewards_page(d):
+    """Returns True if any known Rewards page landmark is currently visible."""
+    return (
+        d(text="Today's points").exists
+        or d(text="Daily set").exists
+        or d(text="Streaks").exists
+    )
 
-    log(f"  Scanning for cards with 'earn {earn_keyword} points' in content-desc...")
+
+def _navigate_to_rewards(d):
+    """
+    Attempts to open and confirm the Rewards page from the Bing home screen.
+    Returns True if the Rewards page loaded successfully, False otherwise.
+    """
+    if not open_rewards_page(d):
+        log("  [RECOVER] Rewards card not found on home screen.")
+        return False
+    if not wait_for_rewards_page(d):
+        log("  [RECOVER] Rewards page did not load after tapping card.")
+        return False
+    return True
+
+
+def _card_loop(d, earn_keyword, total_cards, section_label, collected, geo):
+    """
+    Inner card collection loop. Runs one full pass starting from `collected`.
+    Returns updated collected count and whether the miss counter was exhausted.
+    """
+    miss_count = 0
 
     while collected < total_cards and miss_count < MAX_MISSES:
         all_bounds = _find_card_nodes(d, earn_keyword)
@@ -194,6 +214,83 @@ def collect_cards(d, earn_keyword, total_cards, section_label):
 
         collected  += 1
         miss_count  = 0
+
+    exhausted = (miss_count >= MAX_MISSES)
+    return collected, exhausted
+
+
+def collect_cards(d, earn_keyword, total_cards, section_label):
+    """
+    Clicks reward cards matched by 'earn N points' in content-desc.
+    Scrolls down when no visible cards are found.
+
+    Recovery: when the miss counter is exhausted, checks location before
+    concluding — three possible situations:
+
+      BRANCH A — At the park (outside Bing entirely):
+        → cold relaunch → dismiss any popup → navigate to Rewards page
+        → retry card loop once. If rewards page fails to open → exit.
+
+      BRANCH B — Inside building but wrong room (not on Rewards page):
+        → go_back_to_home() to reach Bing home screen
+        → navigate to Rewards page
+        → retry card loop once.
+        → if Rewards page fails → fall back to full relaunch (Branch A logic)
+
+      BRANCH C — Right room (Rewards page landmarks visible):
+        → cards genuinely unavailable (already collected or not served today)
+        → exit cleanly, no recovery needed.
+
+    Max one recovery per call — cannot loop infinitely.
+    """
+    geo       = _get_geometry(d)
+    collected = 0
+
+    log(f"  Scanning for cards with 'earn {earn_keyword} points' in content-desc...")
+
+    # ── First pass ─────────────────────────────────────────────────
+    collected, exhausted = _card_loop(d, earn_keyword, total_cards, section_label, collected, geo)
+
+    if collected >= total_cards or not exhausted:
+        return collected
+
+    # ── Miss counter exhausted — location check ────────────────────
+    package  = d.app_current().get("package", "")
+    on_rewards = _on_rewards_page(d)
+
+    # BRANCH C — right room, cards just not available
+    if on_rewards:
+        log("  Cards genuinely unavailable (already collected or not served today).")
+        return collected
+
+    # BRANCH B — inside Bing but wrong room
+    if BING_PACKAGE in package:
+        log(f"  [RECOVER] Wrong room inside Bing — navigating back to home screen...")
+        go_back_to_home(d)
+        if not ensure_home_screen(d):
+            # Back press wasn't enough — fall through to full relaunch
+            log("  [RECOVER] Could not confirm home screen — attempting full relaunch...")
+        elif _navigate_to_rewards(d):
+            log("  [RECOVER] Back on Rewards page — retrying card collection once...")
+            collected, _ = _card_loop(d, earn_keyword, total_cards, section_label, collected, geo)
+            return collected
+        else:
+            # On home screen but Rewards card not found — fall through to full relaunch
+            log("  [RECOVER] Could not open Rewards from home — attempting full relaunch...")
+
+    # BRANCH A — at the park, or Branch B fallback
+    else:
+        log(f"  [RECOVER] Outside Bing (current: {package or 'unknown'}) — relaunching...")
+
+    if launch_bing(d) and ensure_home_screen(d):
+        dismiss_popup(d)
+        if _navigate_to_rewards(d):
+            log("  [RECOVER] Back on Rewards page — retrying card collection once...")
+            collected, _ = _card_loop(d, earn_keyword, total_cards, section_label, collected, geo)
+        else:
+            log("  [RECOVER] Rewards page unavailable after relaunch — giving up.")
+    else:
+        log("  [RECOVER] Relaunch failed — giving up.")
 
     return collected
 

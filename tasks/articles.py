@@ -10,6 +10,8 @@ Features:
 import time
 
 from config import (
+    BING_PACKAGE,
+    HOME_ACTIVITY,
     ARTICLE_RESOURCE_ID,
     ARTICLE_SCROLL_VIEW_ID,
     BACK_WAIT,
@@ -17,7 +19,7 @@ from config import (
     DEFAULT_ARTICLE_COUNT,
     DEFAULT_ARTICLE_DURATION,
 )
-from core.device import log, ensure_home_screen, go_back_to_home
+from core.device import log, ensure_home_screen, go_back_to_home, launch_bing
 
 
 # ── Feed navigation ────────────────────────────────────────────────
@@ -40,26 +42,24 @@ def _get_title(el):
         return "(?)"
 
 
-def read_articles(d, count, duration):
+def _article_loop(d, count, duration, seen_titles, start_count=0):
     """
-    Processes unique unread news feed items sequentially.
-    Scrolls down when no fresh articles are in the safe interaction zone.
-    Returns the number of articles successfully read.
+    Inner article reading loop. Separated so it can be called for both the
+    initial pass and the single recovery pass without duplicating code.
+    Returns the number of articles read during this pass.
     """
-    read_count  = 0
+    read_count  = start_count
     fail_count  = 0
-    seen_titles = set()
 
-    # Dynamic geometry — scales to any device resolution
     display_width  = d.info.get("displayWidth",  900)
     display_height = d.info.get("displayHeight", 1600)
 
-    swipe_x       = int(display_width  * 0.50)   # horizontal center
-    swipe_start_y = int(display_height * 0.75)   # 75% down
-    swipe_end_y   = int(display_height * 0.375)  # 37.5% down
+    swipe_x       = int(display_width  * 0.50)
+    swipe_start_y = int(display_height * 0.75)
+    swipe_end_y   = int(display_height * 0.375)
 
-    safe_zone_top    = int(display_height * 0.15)  # 15% top margin
-    safe_zone_bottom = int(display_height * 0.85)  # 85% bottom margin
+    safe_zone_top    = int(display_height * 0.15)
+    safe_zone_bottom = int(display_height * 0.85)
 
     while read_count < count:
         articles = d(resourceId=ARTICLE_RESOURCE_ID)
@@ -68,7 +68,7 @@ def read_articles(d, count, duration):
             fail_count += 1
             log(f"  [!] No feed items found (miss {fail_count}/{MAX_FAILS})")
             if fail_count >= MAX_FAILS:
-                log("  [STOP] Too many consecutive misses — aborting.")
+                log("  [STOP] Too many consecutive misses — stopping this pass.")
                 break
             d.swipe(swipe_x, swipe_start_y, swipe_x, swipe_end_y, 0.35)
             time.sleep(1.5)
@@ -114,6 +114,87 @@ def read_articles(d, count, duration):
         time.sleep(BACK_WAIT)
         read_count += 1
 
+    return read_count
+
+
+def _on_home_screen(d):
+    """Returns True if the current activity is the Bing home screen."""
+    activity = d.app_current().get("activity", "")
+    return HOME_ACTIVITY in activity
+
+
+def _recover_via_relaunch(d, count, duration, seen_titles, read_count):
+    """
+    Branch A recovery: cold relaunch → home screen → scroll to feed → retry loop.
+    Returns updated read_count.
+    """
+    if launch_bing(d) and ensure_home_screen(d):
+        log("  [RECOVER] Back on home screen — scrolling to feed and continuing...")
+        scroll_to_articles(d)
+        read_count = _article_loop(d, count, duration, seen_titles, start_count=read_count)
+    else:
+        log("  [RECOVER] Relaunch failed — stopping article read.")
+    return read_count
+
+
+def read_articles(d, count, duration):
+    """
+    Processes unique unread news feed items sequentially.
+    Scrolls down when no fresh articles are in the safe interaction zone.
+
+    Recovery: when MAX_FAILS is exhausted mid-read, checks device location
+    using a 3-branch strategy mirroring daily.py's collect_cards():
+
+      BRANCH A — Park (outside Bing entirely):
+        → cold relaunch → ensure_home_screen() → scroll_to_articles()
+        → retry loop once.
+
+      BRANCH B — Wrong room (Bing is active package but not on HOME_ACTIVITY):
+        → go_back_to_home() → ensure_home_screen() → scroll_to_articles()
+        → retry loop once.
+        → if ensure_home_screen() fails → fall back to Branch A (full relaunch).
+
+      BRANCH C — Right room (on HOME_ACTIVITY, feed just dried up):
+        → exit cleanly, articles genuinely unavailable.
+
+    seen_titles is preserved across all passes so already-read articles are
+    never repeated. Max one recovery — cannot loop infinitely.
+
+    Returns the total number of articles successfully read.
+    """
+    seen_titles = set()
+
+    # First pass
+    read_count = _article_loop(d, count, duration, seen_titles, start_count=0)
+
+    if read_count >= count:
+        return read_count
+
+    # ── Recovery: location check ───────────────────────────────────
+    package = d.app_current().get("package", "")
+
+    # BRANCH C — right room, feed just dried up
+    if BING_PACKAGE in package and _on_home_screen(d):
+        log("  Feed genuinely unavailable (internet issue or Bing not serving articles).")
+        return read_count
+
+    # BRANCH B — inside Bing but wrong room
+    if BING_PACKAGE in package:
+        log("  [RECOVER] Wrong room inside Bing — navigating back to home screen...")
+        go_back_to_home(d)
+        if ensure_home_screen(d):
+            log("  [RECOVER] Back on home screen — scrolling to feed and continuing...")
+            scroll_to_articles(d)
+            read_count = _article_loop(d, count, duration, seen_titles, start_count=read_count)
+            return read_count
+        # Home screen unreachable via back — fall through to full relaunch
+        log("  [RECOVER] Could not reach home screen via back — attempting full relaunch...")
+
+    # BRANCH A — outside Bing entirely, or Branch B fallback
+    else:
+        log(f"  [RECOVER] Outside Bing (current: {package or 'unknown'}) — relaunching...")
+
+    read_count = _recover_via_relaunch(d, count, duration, seen_titles, read_count)
     return read_count
 
 # ── Task entry point ───────────────────────────────────────────────

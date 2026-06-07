@@ -66,7 +66,15 @@ def launch_bing(d):
 def ensure_home_screen(d):
     """
     Verifies the current activity is the Bing home screen.
-    Force-relaunches via explicit activity if not already there.
+
+    Fast path  — already on HOME_ACTIVITY: settle and return True.
+    Recovery   — anywhere else (wrong room OR outside Bing entirely / at the
+                 Android launcher): delegate to launch_bing() which does a full
+                 app_stop → app_start cold cycle. Cold-starting always lands on
+                 HOME_ACTIVITY regardless of where we were (wrong room, park, etc).
+                 Explicit activity= param is intentionally avoided — it is silently
+                 ignored by Samsung's activity manager when the app is already in
+                 the background.
     """
     activity = d.app_current().get("activity", "")
     if HOME_ACTIVITY in activity:
@@ -75,21 +83,20 @@ def ensure_home_screen(d):
         time.sleep(HOME_SETTLE_WAIT)
         return True
 
-    log("  Wrong screen — force-launching home...")
-    d.app_stop(BING_PACKAGE)
-    time.sleep(1)
-    d.app_start(BING_PACKAGE, activity=HOME_ACTIVITY)
+    log(f"  Not on home screen (current: {activity or 'unknown'}) — cold relaunching Bing...")
+    if not launch_bing(d):
+        log("  [FAIL] Could not relaunch Bing to reach home screen")
+        return False
 
-    deadline = time.time() + 20
-    while time.time() < deadline:
-        if HOME_ACTIVITY in d.app_current().get("activity", ""):
-            log("  Home screen ready ✓")
-            log(f"  Settling for {HOME_SETTLE_WAIT}s while widgets draw...")
-            time.sleep(HOME_SETTLE_WAIT)
-            return True
-        time.sleep(0.8)
+    # Confirm HOME_ACTIVITY is now active after the relaunch settle wait
+    activity = d.app_current().get("activity", "")
+    if HOME_ACTIVITY in activity:
+        log("  Home screen ready after relaunch ✓")
+        log(f"  Settling for {HOME_SETTLE_WAIT}s while widgets draw...")
+        time.sleep(HOME_SETTLE_WAIT)
+        return True
 
-    log("  [FAIL] Could not reach home screen")
+    log(f"  [FAIL] Still not on home screen after relaunch (current: {activity or 'unknown'})")
     return False
 
 
