@@ -14,6 +14,14 @@ from config import (
     HOME_SETTLE_WAIT,
     POPUP_CONTAINER_ID,
     POPUP_CLOSE_ID,
+    NAV_TABS_DESC,
+    NAV_HOME_DESC,
+    TABS_TITLE_ID,
+    TABS_MORE_BTN_ID,
+    TABS_ACTION_LIST_ID,
+    TABS_CLOSE_ALL_DESC,
+    TAB_NAV_WAIT,
+    TAB_SWITCHER_TIMEOUT,
 )
 
 
@@ -159,3 +167,105 @@ def go_back_to_home(d):
     else:
         d.press("back")
     time.sleep(BACK_WAIT)
+
+# ── Tab cleanup ────────────────────────────────────────────────────
+ 
+def close_all_tabs(d):
+    """
+    Closes every open browser tab via Bing's in-app tab switcher.
+ 
+    Both tasks accumulate tabs during a run:
+      - articles.py  opens ~11 tabs (one per article read)
+      - daily.py     opens ~4  tabs (one per reward card clicked)
+ 
+    This function is called once at teardown after all tasks finish,
+    regardless of which tasks ran.
+ 
+    Flow (selectors derived from UI XML dumps of all 3 screens):
+      Step 1 — Tap the "Tabs" navbar button  →  tab switcher opens
+      Step 2 — Tap the 3-dot "More" button   →  bottom-sheet menu appears
+      Step 3 — Tap "Close all tabs" row      →  all tabs cleared
+      Step 4 — Tap the "Home" navbar button  →  return to home feed
+ 
+    Does NOT touch account/session data — tabs are completely separate
+    from the Microsoft account session stored in Bing's app data.
+ 
+    Non-fatal: returns True on success, False if any step fails.
+    The caller (main._teardown) logs a warning and continues either way.
+    """
+    log("\n[TAB CLEANUP] Closing all open tabs...")
+ 
+    # ── Step 1: Open the tab switcher ─────────────────────────────
+    # The navbar is a Compose view with no resource-ids; we match by
+    # content-desc="Tabs" + clickable=True to avoid the inert "selected"
+    # variant of the same label that appears on the tab switcher header.
+    log("  Step 1/4 — Tapping Tabs navbar button...")
+    tabs_btn = d(description=NAV_TABS_DESC, clickable=True)
+    if not tabs_btn.exists:
+        log("  [WARN] Tabs navbar button not found — skipping tab cleanup.")
+        return False
+    tabs_btn.click()
+ 
+    # Confirm switcher opened by waiting for its title resource-id
+    deadline = time.time() + TAB_SWITCHER_TIMEOUT
+    while time.time() < deadline:
+        if d(resourceId=TABS_TITLE_ID).exists:
+            log("  Tab switcher open ✓")
+            break
+        time.sleep(0.5)
+    else:
+        log("  [WARN] Tab switcher did not open — skipping tab cleanup.")
+        return False
+ 
+    time.sleep(TAB_NAV_WAIT)
+ 
+    # ── Step 2: Tap the 3-dot More button ─────────────────────────
+    # resource-id: com.microsoft.bing:id/sa_tabs_more, top-right corner
+    log("  Step 2/4 — Tapping More (⋯) button...")
+    more_btn = d(resourceId=TABS_MORE_BTN_ID)
+    if not more_btn.exists:
+        log("  [WARN] More button not found — pressing back and skipping.")
+        d.press("back")
+        return False
+    more_btn.click()
+ 
+    # Confirm bottom-sheet appeared via its action list resource-id
+    deadline = time.time() + TAB_SWITCHER_TIMEOUT
+    while time.time() < deadline:
+        if d(resourceId=TABS_ACTION_LIST_ID).exists:
+            log("  Bottom-sheet menu open ✓")
+            break
+        time.sleep(0.5)
+    else:
+        log("  [WARN] Bottom-sheet menu did not appear — pressing back and skipping.")
+        d.press("back")
+        return False
+ 
+    time.sleep(TAB_NAV_WAIT)
+ 
+    # ── Step 3: Tap "Close all tabs" ──────────────────────────────
+    # The text node itself is not clickable; we tap its clickable parent
+    # row which carries content-desc="Close all tabs, Button"
+    log("  Step 3/4 — Tapping 'Close all tabs'...")
+    close_btn = d(description=TABS_CLOSE_ALL_DESC)
+    if not close_btn.exists:
+        log("  [WARN] 'Close all tabs' row not found — pressing back and skipping.")
+        d.press("back")
+        return False
+    close_btn.click()
+    time.sleep(TAB_NAV_WAIT)
+    log("  All tabs closed ✓")
+ 
+    # ── Step 4: Return to Home via navbar ─────────────────────────
+    # After closing all tabs the switcher remains open; tap Home to dismiss.
+    # Fallback to system back if the Home button isn't found (e.g. UI shifted).
+    log("  Step 4/4 — Returning to Home via navbar...")
+    home_btn = d(description=NAV_HOME_DESC, clickable=True)
+    if home_btn.exists:
+        home_btn.click()
+    else:
+        d.press("back")
+    time.sleep(TAB_NAV_WAIT)
+ 
+    log("[TAB CLEANUP] Complete ✓")
+    return True

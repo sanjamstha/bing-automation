@@ -8,7 +8,7 @@ Menu options:
   0 — Exit
 """
 
-from core.device import connect, launch_bing, ensure_home_screen, dismiss_popup, log
+from core.device import connect, launch_bing, ensure_home_screen, dismiss_popup, close_all_tabs, log, go_back_to_home
 from tasks import daily, articles
 
 
@@ -56,6 +56,16 @@ def _startup(d):
 
     return True
 
+def _teardown(d):
+    """
+    Post-run cleanup: closes all browser tabs accumulated during the run,
+    then returns to the home screen.
+ 
+    Called once after whichever tasks completed (1, 2, or 3).
+    Non-fatal — a failure here does not affect already-printed task results.
+    """
+    log("\n[TEARDOWN] Running post-task cleanup...")
+    close_all_tabs(d)
 
 # ── Task runners ───────────────────────────────────────────────────
 
@@ -65,7 +75,6 @@ def run_daily(d):
 
 
 def run_articles(d):
-    
     result = articles.run(d)
     articles.print_report(result)
 
@@ -110,6 +119,7 @@ def main():
     elif choice == "3":
         run_both(d)
 
+    _teardown(d)
     log("\nAll tasks complete.")
 
 
