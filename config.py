@@ -1,8 +1,5 @@
 # config.py — All project-wide constants in one place
 
-# ── Device connection ──────────────────────────────────────────────
-ADB_ADDRESS = "127.0.0.1:7555"
-
 # ── Bing app identifiers ───────────────────────────────────────────
 BING_PACKAGE  = "com.microsoft.bing"
 HOME_ACTIVITY = "com.microsoft.sapphire.app.main.MainSapphireActivity"
@@ -26,7 +23,7 @@ BACK_WAIT            = 2.5  # Pause after pressing back
 REWARDS_READ_WAIT    = 5    # Hold time per reward card to register points
 REWARDS_PAGE_TIMEOUT = 15   # Max wait for Rewards WebView to load
 LAUNCH_SETTLE_WAIT   = 5    # Wait after Bing reaches foreground for UI to render
-HOME_SETTLE_WAIT     = 2.5    # Wait after home screen confirmed for widgets to draw
+HOME_SETTLE_WAIT     = 2    # Wait after home screen confirmed for widgets to draw
 
 # ── Popup detection & dismissal ────────────────────────────────────
 POPUP_CONTAINER_ID = "android:id/parentPanel"               # Generic Android dialog wrapper
@@ -56,3 +53,6 @@ TABS_CLOSE_ALL_DESC = "Close all tabs, Button"  # content-desc of the clickable 
 # ── Tab management timing (seconds) ───────────────────────────────
 TAB_NAV_WAIT        = 2.0  # settle wait after each navbar / sheet tap
 TAB_SWITCHER_TIMEOUT = 8   # max wait for tab switcher title to appear
+
+# ── Concurrency ────────────────────────────────────────────────────
+MAX_WORKERS = 2  # Max devices running simultaneously.

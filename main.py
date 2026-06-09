@@ -1,47 +1,32 @@
 """
-main.py — Bing Automation: Unified Entry Point
+main.py — Bing Automation: Entry Point
 
-Menu options:
-  1 — Daily Rewards  (Check-in + Daily Set + More Activities)
-  2 — Read Articles
-  3 — Both           (Daily Rewards first, then Read Articles)
-  0 — Exit
+Automatically detects all connected ADB devices and runs the full automation (Daily Rewards -> Read Articles) on each device in parallel. 
+No user input required — just run the script.
+
+Concurrency is controlled by MAX_WORKERS in config.py. If you have 4 devices and MAX_WORKERS=2, the first 2 start immediately and the remaining 2 are queued — each starts as a slot frees up.
 """
 
-from core.device import connect, launch_bing, ensure_home_screen, dismiss_popup, close_all_tabs, log, go_back_to_home
+from concurrent.futures import ThreadPoolExecutor
+
+from core.device import (
+    detect_devices, connect,
+    launch_bing, ensure_home_screen,
+    dismiss_popup, close_all_tabs,
+    log, set_device_label,
+)
+from config import MAX_WORKERS
 from tasks import daily, articles
 
 
-# ── Menu ───────────────────────────────────────────────────────────
-
-def print_menu():
-    print()
-    print("=" * 52)
-    print("        BING AUTOMATION — MAIN MENU               ")
-    print("=" * 52)
-    print("  1  —  Daily Rewards")
-    print("  2  —  Read Articles")
-    print("  3  —  Both (Daily Rewards → Read Articles)")
-    print("  0  —  Exit")
-    print("=" * 52)
-
-
-def get_choice():
-    while True:
-        choice = input("Select an option [0-3]: ").strip()
-        if choice in ("0", "1", "2", "3"):
-            return choice
-        print("  [!] Invalid choice — please enter 0, 1, 2, or 3.")
-
-
-# ── Startup helpers ────────────────────────────────────────────────
+# ── Startup / teardown ─────────────────────────────────────────────
 
 def _startup(d):
     """
     Shared startup sequence: launch Bing and confirm the home screen.
     Returns True on success, False if either step fails.
     """
-    log("\n[STARTUP] Launching Bing...")
+    log("[STARTUP] Launching Bing...")
     if not launch_bing(d):
         log("[ABORT] Bing failed to reach foreground.")
         return False
@@ -58,69 +43,100 @@ def _startup(d):
 
 def _teardown(d):
     """
-    Post-run cleanup: closes all browser tabs accumulated during the run,
-    then returns to the home screen.
- 
-    Called once after whichever tasks completed (1, 2, or 3).
+    Post-run cleanup: closes all browser tabs accumulated during the run.
     Non-fatal — a failure here does not affect already-printed task results.
     """
-    log("\n[TEARDOWN] Running post-task cleanup...")
+    log("[TEARDOWN] Running post-task cleanup...")
     close_all_tabs(d)
 
 # ── Task runners ───────────────────────────────────────────────────
 
-def run_daily(d):
+def _run_daily(d):
+    log("\n" + "─" * 52)
+    log("TASK 1/2 — Daily Rewards")
+    log("─" * 52)
     result = daily.run(d)
     daily.print_report(result)
 
 
-def run_articles(d):
+def _run_articles(d):
+    log("\n" + "─" * 52)
+    log("TASK 2/2 — Read Articles")
+    log("─" * 52)
     result = articles.run(d)
     articles.print_report(result)
 
 
-def run_both(d):
+# ── Per-device entry point (runs inside each thread) ───────────────
 
-    # 1. Daily Rewards
-    log("\n" + "─" * 52)
-    log("TASK 1/2 — Daily Rewards")
-    log("─" * 52)
-    daily_result = daily.run(d)
-    daily.print_report(daily_result)
+def _run_on_device(args):
+    """
+    Full automation run for a single device.
+    Accepts a tuple of (serial, index, total) — required because
+    ThreadPoolExecutor.map() passes a single argument per call.
 
-    # 2. Read Articles (device is already on home screen after daily.run)
-    log("\n" + "─" * 52)
-    log("TASK 2/2 — Read Articles")
-    log("─" * 52)
-    articles_result = articles.run(d)
-    articles.print_report(articles_result)
+    Label format: "EMU-1/4" so it is clear in the console which
+    device is logging and how many are running in total.
+    """
+    serial, index, total = args
+    label = f"EMU-{index}/{total}"
+    set_device_label(label)
+
+    try:
+        d = connect(serial)
+
+        if not _startup(d):
+            log("Startup failed — skipping this device.")
+            return
+
+        _run_daily(d)
+        _run_articles(d)
+        _teardown(d)
+
+        log("Device run complete ✓")
+
+    except Exception as e:
+        log(f"[ERROR] Unhandled exception — device skipped. Reason: {e}")
 
 
 # ── Main ───────────────────────────────────────────────────────────
 
 def main():
-    print_menu()
-    choice = get_choice()
+    print()
+    print("=" * 52)
+    print("        BING AUTOMATION — STARTING UP             ")
+    print("=" * 52)
 
-    if choice == "0":
-        print("Exiting. Goodbye!")
+    # Detect all connected devices (auto-restarts ADB server if needed)
+    serials = detect_devices()
+
+    if not serials:
+        print("[ERROR] No ADB devices found after ADB server restart.")
+        print("        Make sure your emulators are running and visible to ADB.")
+        print("        Run `adb devices` to verify.")
         return
 
-    # Connect once; all tasks share the same device handle
-    d = connect()
+    total = len(serials)
+    print(f"  Devices found : {total}")
+    for i, s in enumerate(serials, start=1):
+        print(f"    {i}. {s}")
+    print(f"  Max parallel  : {MAX_WORKERS}")
+    print("=" * 52)
+    print()
 
-    if not _startup(d):
-        return
+    # Build argument tuples — executor.map passes one arg per call
+    device_args = [(serial, index, total)
+                    for index, serial in enumerate(serials, start=1)]
 
-    if choice == "1":
-        run_daily(d)
-    elif choice == "2":
-        run_articles(d)
-    elif choice == "3":
-        run_both(d)
+    # ThreadPoolExecutor queues devices automatically when MAX_WORKERS
+    # is less than the total device count — no manual batching needed.
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        executor.map(_run_on_device, device_args)
 
-    _teardown(d)
-    log("\nAll tasks complete.")
+    print()
+    print("=" * 52)
+    print("  All devices finished.")
+    print("=" * 52)
 
 
 if __name__ == "__main__":
