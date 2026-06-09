@@ -73,7 +73,10 @@ def _get_geometry(d):
 
 def _scroll_down_one(d):
     geo = _get_geometry(d)
-    d.swipe(geo["cx"], geo["swipe_start"], geo["cx"], geo["swipe_end"], 0.35)
+    try:
+        d.swipe(geo["cx"], geo["swipe_start"], geo["cx"], geo["swipe_end"], 0.35)
+    except Exception as e:
+        log(f"  [WARN] Swipe failed (likely system UI in foreground): {e.__class__.__name__} — skipping scroll.")
     time.sleep(1.8)
 
 
@@ -113,9 +116,11 @@ def do_checkin(d):
     el = d(text=TEXT_CHECKIN)
     bounds = el.info.get("bounds", {})
 
-    # Base fallback positions inside the element center bounds
-    cx = 450
-    cy = (bounds.get("top", 1182) + bounds.get("bottom", 1226)) // 2
+    # Base fallback — derived proportionally from actual display size
+    w  = d.info.get("displayWidth",  900)
+    h  = d.info.get("displayHeight", 1600)
+    cx = w // 2
+    cy = (bounds.get("top", int(h * 0.74)) + bounds.get("bottom", int(h * 0.77))) // 2
 
     # Loop over active target tokens to get dynamic columns
     # (Handles Day 1 through Day 7 seamlessly)
@@ -164,6 +169,7 @@ def _on_rewards_page(d):
         d(text="Today's points").exists
         or d(text="Daily set").exists
         or d(text="Streaks").exists
+        or d(text="More activities").exists      
     )
 
 

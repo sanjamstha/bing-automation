@@ -146,6 +146,12 @@ def launch_bing(d):
     Uses app_wait (not activity polling) to confirm foreground.
     No activity= param on app_start to avoid silent failures from a hardcoded activity name.
     """
+    # Check Bing is installed before attempting launch
+    installed = d.shell(f"pm list packages {BING_PACKAGE}").output.strip()
+    if BING_PACKAGE not in installed:
+        log(f"  [SKIP] Bing not installed on this device — skipping.")
+        return False
+
     log("  Stopping any existing Bing instance...")
     d.app_stop(BING_PACKAGE)
     time.sleep(1)

@@ -70,7 +70,10 @@ def _article_loop(d, count, duration, seen_titles, start_count=0):
             if fail_count >= MAX_FAILS:
                 log("  [STOP] Too many consecutive misses — stopping this pass.")
                 break
-            d.swipe(swipe_x, swipe_start_y, swipe_x, swipe_end_y, 0.35)
+            try:
+                d.swipe(swipe_x, swipe_start_y, swipe_x, swipe_end_y, 0.35)
+            except Exception as e:
+                log(f"  [WARN] Swipe failed: {e.__class__.__name__} — skipping scroll.")
             time.sleep(1.5)
             continue
 
@@ -103,7 +106,10 @@ def _article_loop(d, count, duration, seen_titles, start_count=0):
 
         if not clicked_this_loop:
             log("  No fresh articles in safe zone — scrolling down...")
-            d.swipe(swipe_x, swipe_start_y, swipe_x, swipe_end_y, 0.35)
+            try:
+                d.swipe(swipe_x, swipe_start_y, swipe_x, swipe_end_y, 0.35)
+            except Exception as e:
+                log(f"  [WARN] Swipe failed: {e.__class__.__name__} — skipping scroll.")
             time.sleep(1.5)
             continue
 
