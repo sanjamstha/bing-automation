@@ -199,9 +199,17 @@ def _card_loop(d, earn_keyword, total_cards, section_label, collected, geo):
         visible    = [b for b in all_bounds if _button_in_safe_zone(b, geo)]
 
         if not visible:
-            miss_count += 1
-            log(f"  No visible target cards (miss {miss_count}/{MAX_MISSES}) — scrolling down...")
+            log(f"  No visible target cards (miss {miss_count + 1}/{MAX_MISSES}) — scrolling down...")
             _scroll_down_one(d)
+            miss_count += 1
+            if miss_count >= MAX_MISSES:
+                all_bounds = _find_card_nodes(d, earn_keyword)
+                visible    = [b for b in all_bounds if _button_in_safe_zone(b, geo)]
+                if visible:
+                    log("  Cards appeared after final scroll — continuing...")
+                    miss_count = 0
+                else:
+                    break
             continue
 
         bounds = visible[0]
