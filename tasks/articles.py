@@ -8,6 +8,7 @@ Features:
 """
 
 import time
+import random
 
 from config import (
     BING_PACKAGE,
@@ -16,8 +17,10 @@ from config import (
     ARTICLE_SCROLL_VIEW_ID,
     BACK_WAIT,
     MAX_FAILS,
-    DEFAULT_ARTICLE_COUNT,
-    DEFAULT_ARTICLE_DURATION,
+    ARTICLE_COUNT_MIN,
+    ARTICLE_COUNT_MAX,
+    ARTICLE_DURATION_MIN,
+    ARTICLE_DURATION_MAX,
 )
 from core.device import log, ensure_home_screen, go_back_to_home, launch_bing
 
@@ -113,8 +116,9 @@ def _article_loop(d, count, duration, seen_titles, start_count=0):
             time.sleep(1.5)
             continue
 
-        log(f"  Reading for {duration}s...")
-        time.sleep(duration)
+        actual_duration = random.uniform(duration[0], duration[1])
+        log(f"  Reading for {actual_duration:.1f}s...")
+        time.sleep(actual_duration)
 
         d.press("back")
         time.sleep(BACK_WAIT)
@@ -205,7 +209,7 @@ def read_articles(d, count, duration):
 
 # ── Task entry point ───────────────────────────────────────────────
 
-def run(d, articles_limit=DEFAULT_ARTICLE_COUNT, read_duration=DEFAULT_ARTICLE_DURATION):
+def run(d):
     """
     Execute the Read Articles task on an already-connected device.
     Assumes Bing is running and the home screen is confirmed before calling.
@@ -213,10 +217,11 @@ def run(d, articles_limit=DEFAULT_ARTICLE_COUNT, read_duration=DEFAULT_ARTICLE_D
     If articles_limit or read_duration are not provided, the user is prompted.
     Returns a result dict with keys: read_count, articles_limit.
     """
-    # if articles_limit is None or read_duration is None:
-    #     articles_limit, read_duration = prompt_config()
+    articles_limit = random.randint(ARTICLE_COUNT_MIN, ARTICLE_COUNT_MAX)
+    read_duration  = (ARTICLE_DURATION_MIN, ARTICLE_DURATION_MAX)  # passed as range, rolled per article
 
-    log(f"\nStarting article read — Target: {articles_limit} articles at {read_duration}s each.")
+    log(f"\nStarting article read — Target: {articles_limit} articles, "
+        f"{ARTICLE_DURATION_MIN}–{ARTICLE_DURATION_MAX}s each.")
 
     # Ensure we are on the home screen before scrolling to the feed
     if not ensure_home_screen(d):

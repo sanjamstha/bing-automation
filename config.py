@@ -20,7 +20,8 @@ TEXT_CHECKIN = "Check in"
 
 # ── Timing (seconds) ──────────────────────────────────────────────
 BACK_WAIT            = 2.5  # Pause after pressing back
-REWARDS_READ_WAIT    = 5    # Hold time per reward card to register points
+REWARDS_READ_WAIT_MIN = 4   # Hold time per reward card (min)
+REWARDS_READ_WAIT_MAX = 6.5   # Hold time per reward card (max)
 REWARDS_PAGE_TIMEOUT = 15   # Max wait for Rewards WebView to load
 LAUNCH_SETTLE_WAIT   = 5    # Wait after Bing reaches foreground for UI to render
 HOME_SETTLE_WAIT     = 2    # Wait after home screen confirmed for widgets to draw
@@ -34,8 +35,10 @@ MAX_MISSES     = 3   # Max consecutive misses before giving up on reward cards
 MAX_FAILS      = 3   # Max consecutive failures before aborting article read loop
 
 # ── Article reader defaults ────────────────────────────────────────
-DEFAULT_ARTICLE_COUNT    = 11
-DEFAULT_ARTICLE_DURATION = 7   # seconds per article
+ARTICLE_COUNT_MIN    = 10    # articles to read (min)
+ARTICLE_COUNT_MAX    = 12   # articles to read (max)
+ARTICLE_DURATION_MIN = 7    # seconds per article (min)
+ARTICLE_DURATION_MAX = 9.5   # seconds per article (max
 
 # ── Tab management identifiers ─────────────────────────────────────
 # Navbar (persistent across all screens — Compose view, no resource-ids on items)

@@ -11,6 +11,7 @@ Check-in outcomes:
 """
 
 import time
+import random
 
 from config import (
     BING_PACKAGE,
@@ -20,7 +21,8 @@ from config import (
     TEXT_STREAKS,
     TEXT_CHECKIN,
     BACK_WAIT,
-    REWARDS_READ_WAIT,
+    REWARDS_READ_WAIT_MIN,
+    REWARDS_READ_WAIT_MAX,
     REWARDS_PAGE_TIMEOUT,
     MAX_MISSES,
 )
@@ -219,8 +221,9 @@ def _card_loop(d, earn_keyword, total_cards, section_label, collected, geo):
         log(f"  [{section_label} {collected+1}/{total_cards}] Clicking at ({cx}, {cy})...")
         d.click(cx, cy)
 
-        log(f"  Holding for {REWARDS_READ_WAIT}s to register points...")
-        time.sleep(REWARDS_READ_WAIT)
+        hold = random.uniform(REWARDS_READ_WAIT_MIN, REWARDS_READ_WAIT_MAX)
+        log(f"  Holding for {hold:.1f}s to register points...")
+        time.sleep(hold)
 
         log("  Pressing back to return to rewards page...")
         d.press("back")
