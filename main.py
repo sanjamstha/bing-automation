@@ -72,14 +72,11 @@ def _run_articles(d):
 def _run_on_device(args):
     """
     Full automation run for a single device.
-    Accepts a tuple of (serial, index, total) — required because
-    ThreadPoolExecutor.map() passes a single argument per call.
-
-    Label format: "EMU-1/4" so it is clear in the console which
-    device is logging and how many are running in total.
+    Accepts a tuple of (serial, index, total, name) — required because ThreadPoolExecutor.map() passes a single argument per call.
+    Label uses the friendly name when provided by the launcher, otherwise falls back to "EMU-N/total".
     """
-    serial, index, total = args
-    label = f"EMU-{index}/{total}"
+    serial, index, total, name = args
+    label = f"{name}" if name else f"EMU-{index}/{total}"
     set_device_label(label)
 
     try:
@@ -101,7 +98,12 @@ def _run_on_device(args):
 
 # ── Main ───────────────────────────────────────────────────────────
 
-def main():
+def main(device_names=None):
+    """
+    device_names: optional dict mapping serial -> friendly name, provided by a launcher script. When None (direct run), labels fall back to EMU-N/total format.
+    """
+    if device_names is None:
+        device_names = {}
     print()
     print("=" * 52)
     print("        BING AUTOMATION — STARTING UP             ")
@@ -115,18 +117,28 @@ def main():
         print("        Make sure your emulators are running and visible to ADB.")
         print("        Run `adb devices` to verify.")
         return
-
+    
+    if device_names:
+        serials = [s for s in serials if s in device_names]
+        if not serials:
+            print("[ERROR] None of the launcher's devices appeared in adb devices.")
+            return
+        
     total = len(serials)
     print(f"  Devices found : {total}")
     for i, s in enumerate(serials, start=1):
-        print(f"    {i}. {s}")
+        name = device_names.get(s, "")
+        label = f"{name}" if name else s
+        print(f"    {i}. {label} ({s})")
     print(f"  Max parallel  : {MAX_WORKERS}")
     print("=" * 52)
     print()
 
     # Build argument tuples — executor.map passes one arg per call
-    device_args = [(serial, index, total)
-                    for index, serial in enumerate(serials, start=1)]
+    device_args = [
+        (serial, index, total, device_names.get(serial, ""))
+        for index, serial in enumerate(serials, start=1)
+    ]
 
     # ThreadPoolExecutor queues devices automatically when MAX_WORKERS
     # is less than the total device count — no manual batching needed.
