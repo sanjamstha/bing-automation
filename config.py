@@ -28,8 +28,10 @@ HOME_SETTLE_WAIT     = 2    # Wait after home screen confirmed for widgets to dr
 
 # ── Popup detection & dismissal ────────────────────────────────────
 POPUP_CONTAINER_ID = "android:id/parentPanel"               # Generic Android dialog wrapper
-POPUP_CLOSE_ID     = "com.microsoft.bing:id/do_you_like_close"  # Bing feedback popup close btn
-
+POPUP_CLOSE_IDS    = [
+    "com.microsoft.bing:id/do_you_like_close",   # Bing feedback popup close btn
+    "com.microsoft.bing:id/dialog_close",         # Generic Bing dialog close
+]
 # ── Retry limits ──────────────────────────────────────────────────
 MAX_MISSES     = 3   # Max consecutive misses before giving up on reward cards
 MAX_FAILS      = 3   # Max consecutive failures before aborting article read loop

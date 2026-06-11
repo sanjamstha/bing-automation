@@ -25,6 +25,8 @@ from config import (
     REWARDS_READ_WAIT_MAX,
     REWARDS_PAGE_TIMEOUT,
     MAX_MISSES,
+    POPUP_CONTAINER_ID,
+    POPUP_CLOSE_IDS,
 )
 from core.device import log, go_back_to_home, dismiss_popup, launch_bing, ensure_home_screen
 
@@ -44,8 +46,19 @@ def open_rewards_page(d):
 
 
 def wait_for_rewards_page(d):
-    """Wait for the Rewards WebView to load — accepts any known landmark."""
+    """
+    Wait for the Rewards WebView to load — accepts any known landmark.
+    Two-tier popup handling runs on every polling iteration:
+      Tier 1 — Known close button found:
+        Click it, stay on the Rewards page, and keep polling. This is the ideal path — no navigation away.
+      Tier 2 — Popup present but no known close button:
+        Delegate to dismiss_popup() which does a cold relaunch back to the Bing home screen. Return False immediately so run() can attempt re-navigation to the Rewards page rather than burning the timeout.
+    """
+
     log(f"  Waiting for Rewards page (up to {REWARDS_PAGE_TIMEOUT}s)...")
+    # Known close buttons — mirrors the list in dismiss_popup()
+    _close_targets = POPUP_CLOSE_IDS
+
     deadline = time.time() + REWARDS_PAGE_TIMEOUT
     while time.time() < deadline:
         if (d(text="Today's points").exists
@@ -54,7 +67,30 @@ def wait_for_rewards_page(d):
             log("  Rewards page loaded ✓")
             time.sleep(1.5)
             return True
+
+        if d(resourceId=POPUP_CONTAINER_ID).exists:
+            # Tier 1: try known close buttons — stay on Rewards page
+            dismissed = False
+            for res_id in _close_targets:
+                btn = d(resourceId=res_id)
+                if btn.exists:
+                    btn.click()
+                    log(f"  [POPUP] Dismissed via {res_id} — continuing to wait for Rewards page...")
+                    time.sleep(1.0)
+                    dismissed = True
+                    break
+
+            if dismissed:
+                continue  # Resume polling — still on Rewards page
+
+            # Tier 2: unknown popup — cold relaunch via dismiss_popup(), return early
+            log("  [POPUP] Unknown popup blocking Rewards page — delegating to dismiss_popup()...")
+            dismiss_popup(d)
+            log("  [POPUP] Cold relaunch complete — returning False for run() to re-navigate.")
+            return False
+
         time.sleep(0.8)
+
     log("  [TIMEOUT] Rewards page did not load")
     return False
 
@@ -333,9 +369,17 @@ def run(d):
     # Step 2: Wait for Rewards page to load
     log("\n[2/3] Waiting for Rewards page to load...")
     if not wait_for_rewards_page(d):
-        go_back_to_home(d)
-        log("[ABORT] Rewards page did not load.")
-        return None
+        # A Tier 2 popup dismissal cold-relaunches Bing back to the home screen.
+        # Attempt one re-navigation to the Rewards page before giving up.
+        log("  [RECOVER] Rewards page did not load — checking if we can re-navigate...")
+        if ensure_home_screen(d) and _navigate_to_rewards(d):
+            log("  [RECOVER] Re-navigated to Rewards page — retrying load wait...")
+            if not wait_for_rewards_page(d):
+                log("[ABORT] Rewards page still did not load after recovery.")
+                return None
+        else:
+            log("[ABORT] Rewards page did not load and re-navigation failed.")
+            return None
 
     # Step 3a: Check-in
     checkin_result = do_checkin(d)

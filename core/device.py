@@ -14,7 +14,7 @@ from config import (
     LAUNCH_SETTLE_WAIT,
     HOME_SETTLE_WAIT,
     POPUP_CONTAINER_ID,
-    POPUP_CLOSE_ID,
+    POPUP_CLOSE_IDS,
     NAV_TABS_DESC,
     NAV_HOME_DESC,
     TABS_TITLE_ID,
@@ -233,10 +233,7 @@ def dismiss_popup(d):
     log("  [POPUP] Still visible after relaunch — attempting targeted dismiss...")
 
     # Known close buttons — add new resource-ids here as more popups are found
-    close_targets = [
-        POPUP_CLOSE_ID,                         # Bing feedback dialog (do_you_like_close)
-        "com.microsoft.bing:id/dialog_close",   # Generic Bing dialog close (future-proofing)
-    ]
+    close_targets = POPUP_CLOSE_IDS
     for res_id in close_targets:
         btn = d(resourceId=res_id)
         if btn.exists:
