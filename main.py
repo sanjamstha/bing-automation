@@ -8,14 +8,14 @@ Concurrency is controlled by MAX_WORKERS in config.py. If you have 4 devices and
 """
 
 from concurrent.futures import ThreadPoolExecutor
-
+import time
 from core.device import (
     detect_devices, connect,
     launch_bing, ensure_home_screen,
     dismiss_popup, close_all_tabs,
     log, set_device_label,
 )
-from config import MAX_WORKERS
+from config import MAX_WORKERS, CONNECT_RETRIES, CONNECT_RETRY_WAIT
 from tasks import daily, articles
 
 
@@ -79,9 +79,20 @@ def _run_on_device(args):
     label = f"{name}" if name else f"EMU-{index}/{total}"
     set_device_label(label)
 
-    try:
-        d = connect(serial)
+    d = None
+    for attempt in range(1, CONNECT_RETRIES + 1):
+        try:
+            d = connect(serial)
+            break
+        except Exception as e:
+            if attempt < CONNECT_RETRIES:
+                log(f"[CONNECT] Attempt {attempt} failed ({e}) — retrying in {CONNECT_RETRY_WAIT}s...")
+                time.sleep(CONNECT_RETRY_WAIT)
+            else:
+                log(f"[CONNECT] All {CONNECT_RETRIES} attempts failed — skipping device.")
+                return
 
+    try:
         if not _startup(d):
             log("Startup failed — skipping this device.")
             return

@@ -61,3 +61,7 @@ TAB_SWITCHER_TIMEOUT = 8   # max wait for tab switcher title to appear
 
 # ── Concurrency ────────────────────────────────────────────────────
 MAX_WORKERS = 2  # Max devices running simultaneously.
+
+# ── Device Connection ────────────────────────────────────────────────────
+CONNECT_RETRIES    = 3
+CONNECT_RETRY_WAIT = 10
