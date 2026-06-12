@@ -16,7 +16,7 @@ from core.device import (
     log, set_device_label,
 )
 from config import MAX_WORKERS, CONNECT_RETRIES, CONNECT_RETRY_WAIT
-from tasks import daily, articles
+from tasks import daily, articles, search
 
 
 # ── Startup / teardown ─────────────────────────────────────────────
@@ -53,7 +53,7 @@ def _teardown(d):
 
 def _run_daily(d):
     log("\n" + "─" * 52)
-    log("TASK 1/2 — Daily Rewards")
+    log("TASK 1/3 — Daily Rewards")
     log("─" * 52)
     result = daily.run(d)
     daily.print_report(result)
@@ -61,11 +61,17 @@ def _run_daily(d):
 
 def _run_articles(d):
     log("\n" + "─" * 52)
-    log("TASK 2/2 — Read Articles")
+    log("TASK 2/3 — Read Articles")
     log("─" * 52)
     result = articles.run(d)
     articles.print_report(result)
 
+def _run_search(d):
+    log("\n" + "─" * 52)
+    log("TASK 3/3 — Search")
+    log("─" * 52)
+    result = search.run(d)
+    search.print_report(result)
 
 # ── Per-device entry point (runs inside each thread) ───────────────
 
@@ -99,6 +105,7 @@ def _run_on_device(args):
 
         _run_daily(d)
         _run_articles(d)
+        _run_search(d)
         _teardown(d)
 
         log("Device run complete ✓")
