@@ -39,16 +39,15 @@ from core.device import (
     dismiss_popup,
 )
 from tasks.daily import open_rewards_page, wait_for_rewards_page
+from tasks.queries import get_queries
 
 
 # ── Local constants (will move to config.py when scaling) ──────────
 
-SEARCH_ITEM         = "venus"
-
-SEARCH_HOLD_MIN     = 4     # seconds to hold on results page (min)
-SEARCH_HOLD_MAX     = 6     # seconds to hold on results page (max)
-SEARCH_WAIT_MIN     = 8     # seconds to wait between searches (min)
-SEARCH_WAIT_MAX     = 12    # seconds to wait between searches (max)
+SEARCH_HOLD_MIN     = 7     # seconds to hold on results page (min)
+SEARCH_HOLD_MAX     = 9     # seconds to hold on results page (max)
+SEARCH_WAIT_MIN     = 11     # seconds to wait between searches (min)
+SEARCH_WAIT_MAX     = 17    # seconds to wait between searches (max)
 SEARCH_BONUS_MIN    = 1     # extra searches added on top of calculated count (min)
 SEARCH_BONUS_MAX    = 3     # extra searches added on top of calculated count (max)
 
@@ -355,7 +354,7 @@ def _recover_to_search_earn(d):
     # Branch C — on rewards page without having closed an overlay →
     # section genuinely unavailable, exit cleanly.
     if _on_rewards_page(d):
-        log("  [RECOVER] On rewards page — 'Search to earn' genuinely unavailable.")
+        log("  [RECOVER] On rewards page — 'Search to earn' completed or genuinely unavailable.")
         return False
 
     package = d.app_current().get("package", "")
@@ -408,7 +407,7 @@ def run(d):
     Returns {"search_count": 0, "target_count": 0} if already completed today.
     Returns None only on hard abort (rewards page unreachable).
     """
-    log(f"\nStarting Search to Earn — query: '{SEARCH_ITEM}'")
+    log(f"\nStarting Search to Earn...")
 
     # Step 0: Clear any popup that may have appeared since startup
     log("\n[0/4] Checking for popups before opening Rewards...")
@@ -460,6 +459,10 @@ def run(d):
     target_count = (y_value // 3) + random.randint(SEARCH_BONUS_MIN, SEARCH_BONUS_MAX)
     log(f"  Target searches: {y_value} pts ÷ 3 = {y_value // 3} base + bonus = {target_count} total")
 
+    # Generate unique search queries for this run
+    log(f"  Fetching {target_count} search queries...")
+    queries = get_queries(target_count)
+
     # Step 4: Search loop
     log(f"\n[4/4] Starting search loop ({target_count} searches)...")
     search_count  = 0
@@ -472,7 +475,7 @@ def run(d):
         success = (
             _tap_search_to_earn(d)
             and _wait_for_search_overlay(d)
-            and _do_single_search(d, SEARCH_ITEM)
+            and _do_single_search(d, queries[i - 1])
         )
 
         if success:
@@ -501,7 +504,7 @@ def run(d):
         success = (
             _tap_search_to_earn(d)
             and _wait_for_search_overlay(d)
-            and _do_single_search(d, SEARCH_ITEM)
+            and _do_single_search(d, queries[i - 1])
         )
 
         if success:
