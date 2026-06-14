@@ -42,6 +42,24 @@ ARTICLE_COUNT_MAX    = 12   # articles to read (max)
 ARTICLE_DURATION_MIN = 7    # seconds per article (min)
 ARTICLE_DURATION_MAX = 9.5   # seconds per article (max
 
+# ── Search to Earn identifiers ────────────────────────────────────────
+SEARCH_OVERLAY_ID   = "com.microsoft.bing:id/input_hint_view"  # confirms overlay is open
+SEARCH_INPUT_ID     = "com.microsoft.bing:id/input"            # EditText to type into
+SEARCH_ACTION_BACK  = "com.microsoft.bing:id/action_back"      # close button on overlay
+SEARCH_TO_EARN_DESC = "Search to earn"                         # descriptionContains selector
+
+# ── Search to Earn timing ────────────────────────────────────────
+SEARCH_HOLD_MIN     = 7     # seconds to hold on results page (min)
+SEARCH_HOLD_MAX     = 9     # seconds to hold on results page (max)
+SEARCH_WAIT_MIN     = 11     # seconds to wait between searches (min)
+SEARCH_WAIT_MAX     = 17    # seconds to wait between searches (max)
+SEARCH_BONUS_MIN    = 1     # extra searches added on top of calculated count (min)
+SEARCH_BONUS_MAX    = 3     # extra searches added on top of calculated count (max)
+
+# ── Search to Earn Retry limits ────────────────────────────────────────
+MAX_SCROLL_ATTEMPTS = 4     # max swipes before giving up on finding "Search to earn"
+OVERLAY_TIMEOUT     = 10    # seconds to wait for search overlay to open
+
 # ── Tab management identifiers ─────────────────────────────────────
 # Navbar (persistent across all screens — Compose view, no resource-ids on items)
 NAV_TABS_DESC       = "Tabs"              # content-desc of the Tabs navbar button

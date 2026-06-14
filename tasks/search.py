@@ -30,7 +30,21 @@ Max one recovery per run — cannot loop infinitely.
 import time
 import random
 
-from config import BING_PACKAGE
+from config import (
+    BING_PACKAGE,
+    SEARCH_OVERLAY_ID,
+    SEARCH_INPUT_ID,
+    SEARCH_ACTION_BACK,
+    SEARCH_TO_EARN_DESC,
+    SEARCH_HOLD_MIN,
+    SEARCH_HOLD_MAX,
+    SEARCH_WAIT_MIN,
+    SEARCH_WAIT_MAX,
+    SEARCH_BONUS_MIN,
+    SEARCH_BONUS_MAX,
+    MAX_SCROLL_ATTEMPTS,
+    OVERLAY_TIMEOUT,
+)
 from core.device import (
     log,
     go_back_to_home,
@@ -41,23 +55,6 @@ from core.device import (
 from tasks.daily import open_rewards_page, wait_for_rewards_page
 from tasks.queries import get_queries
 
-
-# ── Local constants (will move to config.py when scaling) ──────────
-
-SEARCH_HOLD_MIN     = 7     # seconds to hold on results page (min)
-SEARCH_HOLD_MAX     = 9     # seconds to hold on results page (max)
-SEARCH_WAIT_MIN     = 11     # seconds to wait between searches (min)
-SEARCH_WAIT_MAX     = 17    # seconds to wait between searches (max)
-SEARCH_BONUS_MIN    = 1     # extra searches added on top of calculated count (min)
-SEARCH_BONUS_MAX    = 3     # extra searches added on top of calculated count (max)
-
-SEARCH_OVERLAY_ID   = "com.microsoft.bing:id/input_hint_view"  # confirms overlay is open
-SEARCH_INPUT_ID     = "com.microsoft.bing:id/input"            # EditText to type into
-SEARCH_ACTION_BACK  = "com.microsoft.bing:id/action_back"      # close button on overlay
-SEARCH_TO_EARN_DESC = "Search to earn"                         # descriptionContains selector
-
-MAX_SCROLL_ATTEMPTS = 8     # max swipes before giving up on finding "Search to earn"
-OVERLAY_TIMEOUT     = 10    # seconds to wait for search overlay to open
 
 # ── Geometry helpers ───────────────────────────────────────────────
 
