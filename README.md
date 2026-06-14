@@ -1,31 +1,23 @@
 # Bing Automation
 
-A Python automation tool for the Microsoft Bing mobile app that automates daily rewards collection and article reading tasks.
+A fully automated Python tool that controls the Microsoft Bing mobile app to complete daily rewards, read articles, and perform searches. Automatically detects all connected Android devices and runs tasks in parallel.
 
 ## Features
 
-- **Daily Rewards Automation**
-  - Daily check-in with streak tracking
-  - Daily Set collection (3 cards × 10 points each)
-  - More Activities collection (1 card × 5 points)
-  - Automatic point registration and return to home screen
+- **Fully Automated** — No menus or input required. Just run and it handles everything.
 
-- **Article Reading Automation**
-  - Reads articles from the Bing home feed
-  - Configurable article count and read duration
-  - Intelligent duplicate detection via title hashing
-  - Dynamic scaling to any device screen resolution
-  - Safe interaction zones to avoid accidental taps
+- **Three Complete Tasks**
+  - **Daily Rewards** — Check-in, Daily Set cards (3 × 10 points), More Activities (1 × 5 points)
+  - **Read Articles** — Auto-reads unique articles from Bing home feed with duplicate prevention
+  - **Search to Earn** — Performs realistic searches using Wikipedia article titles
 
-- **Smart Device Navigation**
-  - Cold-start Bing from Android home screen
-  - Verifies correct screen/activity before executing tasks
-  - Reliable back navigation using in-app buttons
-  - Automatic retry logic with configurable limits
+- **Multi-Device Parallel Execution** — Auto-detects all ADB devices and runs tasks simultaneously (respects `MAX_WORKERS` limit)
 
-- **Combined Execution Mode**
-  - Run both tasks sequentially in one session
-  - Optimized workflow: Daily Rewards → Read Articles → Return Home
+- **Smart Navigation & Recovery** — Detects if you're outside Bing, in wrong screen, or genuinely stuck, and recovers appropriately
+
+- **Wikipedia Integration** — Fetches real Wikipedia article titles for authentic search queries; intelligent fallback to generated queries if Wikipedia unavailable
+
+- **Thread-Safe Logging** — Synchronized output from multiple devices running in parallel with device labels for clarity
 
 ## Requirements
 
@@ -36,6 +28,9 @@ A Python automation tool for the Microsoft Bing mobile app that automates daily 
 
 ### Software
 - Python 3.7+
+- **ADB (Android Debug Bridge)** — Download from: https://developer.android.com/studio/releases/platform-tools
+  - Windows: Extract to a folder (e.g., `C:\platform-tools`) and add to PATH
+  - Mac/Linux: Install via `brew install android-platform-tools` or package manager
 - `uiautomator2` — Python bindings for Android UIAutomator
 - Microsoft Bing mobile app (installed on target device)
 
@@ -44,168 +39,210 @@ A Python automation tool for the Microsoft Bing mobile app that automates daily 
 - Device must be in Developer Mode with USB Debugging enabled
 - If using emulator: start with adb connection before running the script
 
+### Tested Configurations
+
+**Verified Compatible:**
+- **Emulator:** MuMu Emulator (Android emulator for Windows)
+- **Devices:** Samsung Galaxy A52s 5G, Samsung Galaxy A53 5G
+- **Screen Size:** Optimized for 900×1600 (standard phone portrait)
+
+**Screen Responsiveness:**
+The script adapts to different screen resolutions through dynamic coordinate scaling. While tested and responsive on various sizes, optimal performance is guaranteed on the above configurations. If using other devices, minor UI element timing adjustments in `config.py` may be needed.
+
+⚠️ **Note:** Bing's UI layout varies by device model and app version. If you encounter "element not found" errors, update your resource IDs using the UIAutomator Dump method in the Troubleshooting section.
+
 ## Installation
 
 1. **Clone/download the project**
    ```bash
-   cd bingAutomation
+   cd bing-automation
    ```
 
 2. **Install Python dependencies**
    ```bash
-   pip install uiautomator2
+   pip install -r requirements.txt
    ```
 
-3. **Enable ADB on your Android device**
+3. **Enable ADB on Your Device(s)**
    - Go to Settings → About Phone
    - Tap Build Number 7 times to enable Developer Mode
-   - Go to Settings → Developer Options
-   - Enable USB Debugging
-   - Connect device via USB to computer
+   - Go to Settings → Developer Options → Enable USB Debugging
+   - Connect device via USB to your computer
 
-4. **Start ADB connection** (if not using emulator)
+4. **Verify ADB Connection**
    ```bash
-   adb connect 127.0.0.1:7555
+   adb devices
    ```
+   You should see your device(s) listed as `device`. If using emulators, they typically connect automatically.
 
 ## Usage
 
 ### Running the Program
 
-Start the automation from the project root directory:
-
 ```bash
 python main.py
 ```
 
-### Main Menu Options
+The script will:
+1. Auto-detect all connected ADB devices
+2. Launch Bing on each device
+3. Run all three tasks in sequence on each device (in parallel if multiple devices)
+4. Clean up (close tabs) and finish
 
-```
-1 — Daily Rewards      (Check-in + Daily Set + More Activities)
-2 — Read Articles      (Read N articles for D seconds each)
-3 — Both               (Daily Rewards → Read Articles)
-0 — Exit               (Quit the program)
-```
+### Workflow Summary
 
-### Example Workflows
+**Per Device:**
+1. **Task 1: Daily Rewards** (~2–3 min)
+   - Opens Rewards page
+   - Attempts daily check-in (skipped if streaks not visible today)
+   - Collects 3 Daily Set cards
+   - Collects 1 More Activities card
+   - Returns to home
 
-**Option 1: Daily Rewards Only**
-- Opens Bing Rewards page
-- Attempts daily check-in (if streaks section is available)
-- Collects 3 Daily Set cards (10 points each)
-- Collects 1 More Activities card (5 points)
-- Total: up to 35 points per day
+2. **Task 2: Read Articles** (~2 min)
+   - Scrolls to article feed
+   - Reads 10–12 articles (randomized)
+   - Holds each article for 7–9.5 seconds
+   - Tracks seen articles to avoid duplicates
+   - Returns to home
 
-**Option 2: Read Articles Only**
-- Scrolls to the article feed
-- Reads 11 articles (default) at 7 seconds each (default)
-- Tracks read articles to avoid re-reading
-- Total: ~77 seconds for default settings
+3. **Task 3: Search to Earn** (~5–8 min)
+   - Opens Rewards page
+   - Scrolls to "Search to Earn" section
+   - Performs 8–12 searches (randomized)
+   - Uses Wikipedia article titles for realistic queries
+   - Holds results page for 7–9 seconds per search
+   - Returns to home
 
-**Option 3: Both Tasks**
-- Runs Daily Rewards workflow first
-- Then runs article reading workflow
-- Total: ~3 minutes for default settings
+**Total per device:** ~10–15 minutes (includes all overhead)
 
 ## Configuration
 
-Edit `config.py` to customize behavior:
+All settings are in [config.py](config.py). Key tweaks:
 
-### Device Connection
+### Parallelism
 ```python
-ADB_ADDRESS = "127.0.0.1:7555"  # ADB connection address
+MAX_WORKERS = 2  # Max devices running simultaneously
+CONNECT_RETRIES = 3  # Connection attempts per device
+CONNECT_RETRY_WAIT = 10  # Seconds between retries
 ```
 
-### UI Element Identifiers
+### Timing (seconds)
 ```python
-BING_PACKAGE  = "com.microsoft.bing"
-HOME_ACTIVITY = "com.microsoft.sapphire.app.main.MainSapphireActivity"
-REWARDS_CARD_ID = "com.microsoft.bing:id/glance_card_container"
-ARTICLE_RESOURCE_ID = "com.microsoft.bing:id/sa_hp_native_list_item_container"
+BACK_WAIT = 2.5  # Pause after back button
+REWARDS_READ_WAIT_MIN = 4
+REWARDS_READ_WAIT_MAX = 6.5  # Hold time per reward card
+LAUNCH_SETTLE_WAIT = 5  # Wait after Bing foreground for UI to render
 ```
 
-### Timing (in seconds)
+### Search Limits
 ```python
-BACK_WAIT            = 2.5    # Pause after pressing back
-REWARDS_READ_WAIT    = 4      # Hold time per reward card to register points
-REWARDS_PAGE_TIMEOUT = 15     # Max wait for Rewards page to load
+SEARCH_HOLD_MIN = 7
+SEARCH_HOLD_MAX = 9  # Seconds to hold results page
+SEARCH_WAIT_MIN = 11
+SEARCH_WAIT_MAX = 17  # Seconds between searches
+MAX_SCROLL_ATTEMPTS = 4  # Max attempts to find "Search to Earn"
 ```
 
 ### Retry Limits
 ```python
 MAX_MISSES = 3  # Max consecutive UI element misses before scrolling
-MAX_FAILS  = 5  # Max consecutive failures before aborting article loop
+MAX_FAILS = 3   # Max consecutive failures before aborting article loop
 ```
 
-### Article Reader Defaults
+### Article Randomization
 ```python
-DEFAULT_ARTICLE_COUNT    = 11  # Number of articles to read
-DEFAULT_ARTICLE_DURATION = 7   # Seconds per article
+ARTICLE_COUNT_MIN = 10
+ARTICLE_COUNT_MAX = 12  # Random articles to read per run
+ARTICLE_DURATION_MIN = 7
+ARTICLE_DURATION_MAX = 9.5  # Seconds per article (randomized)
 ```
 
 ## Project Structure
 
 ```
-bingAutomation/
-├── main.py                 # Entry point with menu system
-├── config.py               # Centralized configuration constants
+bing-automation/
+├── main.py                 # Entry point (auto-detect & parallel execution)
+├── config.py               # All configuration constants in one place
+├── requirements.txt        # Python dependencies
 ├── README.md               # This file
-├── initialREADME.md        # Original README
 ├── core/
 │   ├── __init__.py
-│   └── device.py           # Device connection & navigation helpers
+│   └── device.py           # Device connection, ADB, logging, navigation
 └── tasks/
     ├── __init__.py
-    ├── daily.py            # Daily Rewards automation
-    └── articles.py         # Article reading automation
+    ├── daily.py            # Daily Rewards (check-in, cards)
+    ├── articles.py         # Article reading with duplicate tracking
+    ├── search.py           # Search to Earn automation
+    └── queries.py          # Wikipedia query fetcher + fallback combinator
 ```
 
 ## Architecture
 
+### Main Entry Point
+
+**`main.py`**
+- Detects all connected ADB devices (with auto-restart recovery)
+- Spawns thread pool with `MAX_WORKERS` parallel workers
+- Each thread runs the full 3-task sequence independently
+- Thread-safe logging with device labels
+- Connection retry logic with configurable retries
+
 ### Core Components
 
-**`core/device.py`** — Device Management
-- `connect()` — Establish ADB connection and return device handle
-- `launch_bing(d)` — Cold-start Bing app from home screen
-- `ensure_home_screen(d)` — Verify correct activity, force-launch if needed
-- `go_back_to_home(d)` — Navigate back via in-app button or system key
-- `log(msg)` — Timestamped logging utility
+**`core/device.py`** — Device & Navigation
+- `detect_devices()` — Auto-detect via `adb devices` (with server restart fallback)
+- `connect(serial)` — Establish uiautomator2 connection
+- `launch_bing(d)`, `ensure_home_screen(d)`, `go_back_to_home(d)` — Navigation
+- `dismiss_popup(d)` — Detect & dismiss blocking dialogs
+- `close_all_tabs(d)` — Cleanup after tasks
+- `log(msg)` — Thread-safe timestamped logging
 
-**`tasks/daily.py`** — Daily Rewards Workflow
-- `open_rewards_page(d)` — Tap Rewards card to open page
-- `wait_for_rewards_page(d)` — Poll for Rewards page landmarks
-- `do_checkin(d)` — Perform daily check-in with outcome tracking
-- `collect_cards(d, keyword, count, label)` — Click and hold reward cards
-- `run(d)` — Main task orchestrator
-- `print_report(result)` — Summary report printer
+**`tasks/daily.py`** — Daily Rewards
+- `open_rewards_page(d)` — Tap Rewards card
+- `do_checkin(d)` — Daily streak check-in (outcomes: skipped/attempted/done)
+- `collect_cards(d, keyword, count, label)` — Click & hold reward cards with recovery
 
-**`tasks/articles.py`** — Article Reading Workflow
-- `scroll_to_articles(d)` — Skip header banners to reach feed
-- `read_articles(d, count, duration)` — Process unique articles in feed
-- `run(d, limit, duration)` — Main task orchestrator
-- `print_report(result)` — Summary report printer
+**`tasks/articles.py`** — Article Reading
+- `scroll_to_articles(d)` — Skip header to reach feed
+- `read_articles(d, count, duration)` — Process unique articles with `seen_titles` tracking
+- 3-branch recovery: outside Bing / wrong room / feed exhausted
 
-### Key Techniques
+**`tasks/search.py`** — Search to Earn
+- `_scroll_to_search_earn(d)` — Find "Search to Earn" row
+- `_do_single_search(d, query)` — Type query, hold results, return
+- 3-branch recovery + overlay management
 
-- **Dynamic Geometry Scaling** — All swipe coordinates and safe zones scale to device resolution
-- **Duplicate Detection** — Article titles hashed in `seen_titles` set to avoid re-reading
-- **Safe Interaction Zones** — Clicks only on UI elements within screen margins (15%–85%)
-- **Retry Logic** — Automatic scrolling and retry when expected elements not found
-- **Activity Verification** — Ensures correct screen before task execution
+**`tasks/queries.py`** — Query Generation
+- `get_queries(count)` — Try Wikipedia API first; fallback to combinator
+- Wikipedia: Real article titles (45K+ unique combinations via topic + modifier + prefix)
 
-## Logging
+### Key Design Patterns
 
-All operations are logged with timestamps. Example output:
+- **3-Branch Recovery** — Each task detects location (outside Bing / wrong room / right room) and recovers accordingly
+- **Dynamic Geometry** — All coordinates scale to device resolution
+- **Safe Zones** — Interactions restricted to 15%–85% vertical range
+- **Duplicate Prevention** — Article titles hashed; searches use varied sources
+- **Parallel-Safe** — Thread-local logging, independent device connections
+
+## Logging & Output
+
+All operations are logged with timestamps and device labels (for multi-device clarity):
 
 ```
-[14:32:15] Connecting...
-[14:32:16]   Device: Samsung Galaxy S21 (1440x3120)
-[14:32:17] [STARTUP] Launching Bing...
-[14:32:19]   Bing foreground confirmed ✓
-[14:32:20] [1/3] Opening Rewards page...
-[14:32:21]   Tapping Rewards card...
-[14:32:23]   Waiting for Rewards page (up to 15s)...
-[14:32:25]   Rewards page loaded ✓
+[14:32:15] [EMU-1] Connecting...
+[14:32:15] [EMU-2] Connecting...
+[14:32:16] [EMU-1]   Device: emulator (1440x3120)
+[14:32:16] [EMU-2]   Device: emulator (1440x3120)
+[14:32:17] [EMU-1] [STARTUP] Launching Bing...
+[14:32:17] [EMU-2] [STARTUP] Launching Bing...
+[14:32:19] [EMU-1]   Bing foreground confirmed ✓
+[14:32:19] [EMU-2]   Bing foreground confirmed ✓
+[14:32:20] [EMU-1] TASK 1/3 — Daily Rewards
+[14:32:20] [EMU-2] TASK 1/3 — Daily Rewards
+...
+[14:35:22] [EMU-1] Device run complete ✓
+[14:35:25] [EMU-2] Device run complete ✓
 ```
 
 ## Troubleshooting
@@ -241,41 +278,27 @@ All operations are logged with timestamps. Example output:
 ## Performance Notes
 
 - **Daily Rewards Task:** ~2–3 minutes depending on card visibility
-- **Article Reading Task:** ~2 minutes for default 11 articles at 7 seconds each
-- **Both Tasks:** ~5–6 minutes total (includes navigation overhead)
-- **Network Delay:** Points registration may take 1–2 seconds; holding time is `REWARDS_READ_WAIT`
+- **Article Reading Task:** ~2 minutes for default 10–12 articles at 7–9.5 seconds each
+- **Search to Earn Task:** ~5–8 minutes for 8–12 searches using Wikipedia queries
+- **All Three Tasks:** ~10–15 minutes total per device (includes navigation overhead)
+- **Network Delay:** Points registration may take 1–2 seconds; holding times are randomized per `config.py`
 
 ## Limitations & Known Issues
 
-1. **Streaks Section Variable Availability** — The Bing app shows streaks inconsistently; check-in is skipped if not visible
-2. **Article Duplicate Titles** — Articles with identical titles are treated as duplicates and skipped
-3. **WebView Element Instability** — Rewards page elements may take time to render; timeouts are configurable
-4. **Dynamic Layout** — Safe interaction zones assume portrait orientation; landscape may require adjustment
-5. **Single Device** — Script controls one device at a time (no multi-device support)
-
-## Future Enhancements
-
-- Support for user-prompted article count/duration at runtime
-- Logging to file with rotation
-- Session persistence (resume interrupted tasks)
-- Multi-device support
-- Automated Bing UI element discovery via accessibility service
-- Web UI for scheduling and monitoring
+1. **Streaks Variable Availability** — Bing shows streaks inconsistently; check-in is skipped if not visible today
+2. **WebView Rendering** — Rewards page elements may take time to render; timeouts are configurable
+3. **Portrait Orientation** — Safe interaction zones assume portrait (landscape may need adjustment)
+4. **Wikipedia Availability** — If Wikipedia is down, queries fall back to combinator (prefix + topics + modifiers)
+6. **Emulator Lag** — Slow emulators may timeout; increase timeouts in `config.py` if needed
 
 ## Dependencies
 
-- **uiautomator2** — Python bindings for Android UIAutomator framework
-  - Provides `connect()`, device element queries, swipe/click actions, activity verification
-  - GitHub: https://github.com/openatx/uiautomator2
-
-## License
-
-This project is provided as-is for personal automation use with the Bing mobile app.
+All listed in [requirements.txt](requirements.txt):
+- **uiautomator2** — Android UIAutomator bindings for Python
+- **requests** — HTTP library (for Wikipedia queries)
+- **adbutils** — ADB utilities for device management
+- **pillow**, **lxml**, **decorator** — Supporting libraries
 
 ## Disclaimer
 
-This automation tool is intended for personal use with your own Bing account. Ensure compliance with Microsoft's Terms of Service and any applicable app usage policies. The maintainers are not responsible for account suspension or other consequences of automated interaction.
-
----
-
-**Questions or Issues?** Check the Troubleshooting section or review the inline code comments in each module.
+This tool is for personal use with your own Bing account. Ensure compliance with Microsoft's Terms of Service. I am not responsible for any account restrictions or bans resulting from automated interactions.
