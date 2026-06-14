@@ -26,16 +26,24 @@ _TOPICS = [
     "pottery", "origami", "surfing", "painting", "camping",
     "knitting", "bouldering", "archery", "foraging", "beekeeping",
     "calligraphy", "astronomy", "birdwatching", "fermentation", "woodworking",
-]  # 25 topics
+    "embroidery", "sourdough", "terrarium", "cocktails", "journaling",
+    "meditation", "fencing", "glassblowing", "leathercraft", "homebrewing",
+    "macrame", "rock climbing", "scrapbooking", "candle making", "aquarium",
+    "drone flying", "lockpicking", "mushroom growing", "genealogy", "lapidary",
+    "bookbinding", "canyoneering", "falconry", "chainmaille", "hydroponics",
+]  # 50 topics
 
 _MODIFIERS = [
     "near me", "tips", "best", "how to", "for beginners",
     "guide",   "cheap", "review", "ideas", "techniques",
-]  # 10 modifiers
+    "tutorial", "for experts", "equipment", "history", "benefits",
+    "mistakes to avoid", "getting started", "tools needed", "cost", "schedule",
+    "online", "community", "supplies", "classes near me", "for kids",
+]  # 25 modifiers
 
 _PREFIXES = list("abcdefghijklmnopqrstuvwxyz0123456789")  # 36 chars
 
-# Total unique combinations: 25 × 10 × 36 = 9,000
+# Total unique combinations: 50 × 25 × 36 = 45,000
 
 
 # ── Wikipedia fetch ────────────────────────────────────────────────
