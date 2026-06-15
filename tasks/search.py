@@ -404,20 +404,20 @@ def run(d):
     Returns {"search_count": 0, "target_count": 0} if already completed today.
     Returns None only on hard abort (rewards page unreachable).
     """
-    log(f"\nStarting Search to Earn...")
+    log(f" Starting Search to Earn...")
 
     # Step 0: Clear any popup that may have appeared since startup
-    log("\n[0/4] Checking for popups before opening Rewards...")
+    log(" [0/4] Checking for popups before opening Rewards...")
     dismiss_popup(d)
 
     # Step 1: Open rewards page
-    log("\n[1/4] Opening Rewards page...")
+    log(" [1/4] Opening Rewards page...")
     if not open_rewards_page(d):
         log("[ABORT] Could not open Rewards page.")
         return None
 
     # Step 2: Wait for rewards page to load
-    log("\n[2/4] Waiting for Rewards page to load...")
+    log(" [2/4] Waiting for Rewards page to load...")
     if not wait_for_rewards_page(d):
         # Tier 2 popup dismissal may have cold-relaunched back to home screen.
         # Attempt one re-navigation before giving up.
@@ -429,7 +429,7 @@ def run(d):
             return None
 
     # Step 3: Scroll to "Search to earn" and parse daily limit
-    log("\n[3/4] Locating 'Search to earn' section and parsing daily limit...")
+    log(" [3/4] Locating 'Search to earn' section and parsing daily limit...")
     found, y_value, status = _scroll_to_search_earn(d)
 
     if not found:
@@ -461,12 +461,12 @@ def run(d):
     queries = get_queries(target_count)
 
     # Step 4: Search loop
-    log(f"\n[4/4] Starting search loop ({target_count} searches)...")
+    log(f" [4/4] Starting search loop ({target_count} searches)...")
     search_count  = 0
     recovered     = False  # allow max one recovery per run
 
     for i in range(1, target_count + 1):
-        log(f"\n  — Search {i}/{target_count} —")
+        log(f"   — Search {i}/{target_count} —")
 
         # ── Attempt the full search iteration ─────────────────────
         success = (
@@ -515,7 +515,7 @@ def run(d):
             break
 
     # Return to Bing home screen
-    log("\nReturning to home screen...")
+    log(" Returning to home screen...")
     go_back_to_home(d)
 
     return {
@@ -527,7 +527,7 @@ def run(d):
 def print_report(result):
     """Print the Search to Earn summary report."""
     if result is None:
-        print("\n  [!] Search to Earn task did not complete.")
+        print("   [!] Search to Earn task did not complete.")
         return
 
     search_count = result["search_count"]

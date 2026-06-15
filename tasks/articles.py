@@ -220,7 +220,7 @@ def run(d):
     articles_limit = random.randint(ARTICLE_COUNT_MIN, ARTICLE_COUNT_MAX)
     read_duration  = (ARTICLE_DURATION_MIN, ARTICLE_DURATION_MAX)  # passed as range, rolled per article
 
-    log(f"\nStarting article read — Target: {articles_limit} articles, "
+    log(f" Starting article read — Target: {articles_limit} articles, "
         f"{ARTICLE_DURATION_MIN}–{ARTICLE_DURATION_MAX}s each.")
 
     # Ensure we are on the home screen before scrolling to the feed
@@ -232,7 +232,7 @@ def run(d):
     actual_reads = read_articles(d, articles_limit, read_duration)
 
     # Return to Bing home screen after reading
-    log("\nReturning to home screen...")
+    log(" Returning to home screen...")
     go_back_to_home(d)
 
     return {
@@ -244,7 +244,7 @@ def run(d):
 def print_report(result):
     """Print the Read Articles summary report."""
     if result is None:
-        print("\n  [!] Read Articles task did not complete.")
+        print("   [!] Read Articles task did not complete.")
         return
 
     read_count     = result["read_count"]

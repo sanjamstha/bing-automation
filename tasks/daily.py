@@ -135,7 +135,7 @@ def do_checkin(d):
 
     Returns a status string describing what happened.
     """
-    log("\n[CHECK-IN] Looking for Streaks section...")
+    log(" [CHECK-IN] Looking for Streaks section...")
 
     # OUTCOME 1: Streaks section not present today
     if not d(text=TEXT_STREAKS).exists:
@@ -357,17 +357,17 @@ def run(d):
     Returns a result dict with keys: checkin, daily_collected, more_collected.
     """
     # Step 0: Clear any popup that may have appeared since startup
-    log("\n[0/3] Checking for popups before opening Rewards...")
+    log(" [0/3] Checking for popups before opening Rewards...")
     dismiss_popup(d)
 
     # Step 1: Open Rewards page
-    log("\n[1/3] Opening Rewards page...")
+    log(" [1/3] Opening Rewards page...")
     if not open_rewards_page(d):
         log("[ABORT] Could not open Rewards page.")
         return None
 
     # Step 2: Wait for Rewards page to load
-    log("\n[2/3] Waiting for Rewards page to load...")
+    log(" [2/3] Waiting for Rewards page to load...")
     if not wait_for_rewards_page(d):
         # A Tier 2 popup dismissal cold-relaunches Bing back to the home screen.
         # Attempt one re-navigation to the Rewards page before giving up.
@@ -385,15 +385,15 @@ def run(d):
     checkin_result = do_checkin(d)
 
     # Step 3b: Daily Set — 3 cards worth 10 pts each
-    log("\n[3a/3] Collecting Daily Set cards (earn 10 points)...")
+    log(" [3a/3] Collecting Daily Set cards (earn 10 points)...")
     daily_collected = collect_cards(d, "10", total_cards=3, section_label="Daily")
 
     # Step 3c: More Activities — 1 card worth 5 pts
-    log("\n[3b/3] Collecting More Activities cards (earn 5 points)...")
+    log(" [3b/3] Collecting More Activities cards (earn 5 points)...")
     more_collected = collect_cards(d, "5", total_cards=1, section_label="More")
 
     # Return to Bing home screen
-    log("\nReturning to home screen...")
+    log(" Returning to home screen...")
     go_back_to_home(d)
 
     return {
@@ -406,7 +406,7 @@ def run(d):
 def print_report(result):
     """Print the Daily Rewards summary report."""
     if result is None:
-        print("\n  [!] Daily Rewards task did not complete.")
+        print("   [!] Daily Rewards task did not complete.")
         return
 
     daily_pts = result["daily_collected"] * 10

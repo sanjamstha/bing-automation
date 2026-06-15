@@ -282,7 +282,7 @@ def close_all_tabs(d):
     Non-fatal: returns True on success, False if any step fails.
     The caller (main._teardown) logs a warning and continues either way.
     """
-    log("\n[TAB CLEANUP] Closing all open tabs...")
+    log("[TAB CLEANUP] Closing all open tabs...")
 
     # ── Step 1: Open the tab switcher ─────────────────────────────
     log("  Step 1/4 — Tapping Tabs navbar button...")
