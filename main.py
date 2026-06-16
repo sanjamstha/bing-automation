@@ -8,7 +8,8 @@ Concurrency is controlled by MAX_WORKERS in config.py. If you have 4 devices and
 """
 
 from concurrent.futures import ThreadPoolExecutor
-import time
+import time, os
+from datetime import datetime
 from core.device import (
     detect_devices, connect,
     launch_bing, ensure_home_screen,
@@ -118,13 +119,9 @@ def _format_search(search_result):
     return f"{search_result.get('search_count', 0)}/{target}"
 
 
-def _print_summary(results):
+def _build_summary_lines(results):
     """
-    Prints a fixed-width summary table of all device results after all
-    threads have finished, followed by an errors section.
-
-    Column widths are computed dynamically from the widest value in each
-    column so the table stays aligned regardless of device name length.
+    Builds the summary table and errors section as a list of strings.Used by both _print_summary() (console) and _save_summary() (file) so the output is always identical between the two.
     """
     # ── Build rows ─────────────────────────────────────────────────
     headers = ["Device Name", "Startup", "Check In", "Daily Set", "Articles Read", "Search to Earn"]
@@ -143,31 +140,31 @@ def _print_summary(results):
             _format_search(r["search"]),
         ])
 
-    # ── Compute column widths ──────────────────────────────────────
+    # Compute column widths from headers and data
     col_widths = [len(h) for h in headers]
     for row in rows:
         for i, cell in enumerate(row):
             col_widths[i] = max(col_widths[i], len(cell))
 
-    # ── Render table ───────────────────────────────────────────────
-    sep   = "  "  # column separator
+    sep         = "  "
     total_width = sum(col_widths) + len(sep) * (len(headers) - 1)
-    rule  = "─" * total_width
+    rule        = "─" * total_width
 
     def _row_str(cells):
         return sep.join(c.ljust(w) for c, w in zip(cells, col_widths))
 
-    print()
-    print("=" * total_width)
-    print("  SUMMARY REPORT")
-    print("=" * total_width)
-    print(_row_str(headers))
-    print(rule)
+    lines = []
+    lines.append("")
+    lines.append("=" * total_width)
+    lines.append("  SUMMARY REPORT")
+    lines.append("=" * total_width)
+    lines.append(_row_str(headers))
+    lines.append(rule)
     for row in rows:
-        print(_row_str(row))
-    print("=" * total_width)
+        lines.append(_row_str(row))
+    lines.append("=" * total_width)
 
-    # ── Errors section ─────────────────────────────────────────────
+    # Errors section
     all_errors = []
     for r in results:
         if r is None:
@@ -175,12 +172,47 @@ def _print_summary(results):
         for err in r.get("errors", []):
             all_errors.append(f"  [{r['label']}] {err}")
 
-    print()
-    print(f"Errors Encountered - {len(all_errors)}")
+    lines.append("")
+    lines.append(f"Errors Encountered - {len(all_errors)}")
     if all_errors:
         for err in all_errors:
-            print(f"  - {err}")
-    print()
+            lines.append(f"  - {err}")
+    lines.append("")
+
+    return lines
+
+
+def _print_summary(results):
+    """Prints the summary table and errors section to the console."""
+    for line in _build_summary_lines(results):
+        print(line)
+
+def _save_summary(results, run_start):
+    """
+    Appends the summary report to bing-logs/YYYY-MM-DD.log.
+    Each run is prefixed with a Date header so multiple runs on the
+    same day are clearly separated in the file.
+    Creates the bing-logs directory if it does not exist.
+    Non-fatal — a failure here does not affect anything else.
+    """
+    try:
+        os.makedirs("bing-logs", exist_ok=True)
+        today    = run_start.strftime("%Y-%m-%d")
+        filepath = os.path.join("bing-logs", f"{today}.log")
+        lines = _build_summary_lines(results)
+
+        with open(filepath, "a", encoding="utf-8") as f:
+            f.write(f"Date - {run_start.strftime('%Y/%m/%d')}\n")
+            f.write(f"Start time - {run_start.strftime('%H:%M:%S')}\n")
+            f.write(f"Completion time - {datetime.now().strftime('%H:%M:%S')}\n")
+            for line in lines:
+                f.write(line + "\n")
+            f.write("\n")
+
+        print(f"  Summary saved → bing-logs/{today}.log")
+
+    except Exception as e:
+        print(f"  [WARN] Could not save summary to file: {e}")
 
 
 # ── Per-device entry point (runs inside each thread) ───────────────
@@ -252,6 +284,7 @@ def main(device_names=None):
     """
     if device_names is None:
         device_names = {}
+    run_start = datetime.now()
     print()
     print("=" * 52)
     print("        BING AUTOMATION — STARTING UP             ")
@@ -271,7 +304,7 @@ def main(device_names=None):
         if not serials:
             print("[ERROR] None of the launcher's devices appeared in adb devices.")
             return
-        
+
     total = len(serials)
     print(f"  Devices found : {total}")
     for i, s in enumerate(serials, start=1):
@@ -291,15 +324,19 @@ def main(device_names=None):
     # ThreadPoolExecutor queues devices automatically when MAX_WORKERS
     # is less than the total device count — no manual batching needed.
     # Results are collected for the summary report printed after all threads finish.
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-        results = list(executor.map(_run_on_device, device_args))
+    try:
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            results = list(executor.map(_run_on_device, device_args))
+    except KeyboardInterrupt:
+        pass
+    else:
+        print()
+        print("=" * 52)
+        print("  All devices finished.")
+        print("=" * 52)
 
-    print()
-    print("=" * 52)
-    print("  All devices finished.")
-    print("=" * 52)
-
-    _print_summary(results)
+        _print_summary(results)
+        _save_summary(results, run_start)
 
 if __name__ == "__main__":
     main()
