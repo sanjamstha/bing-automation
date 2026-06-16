@@ -18,6 +18,9 @@ ARTICLE_SCROLL_VIEW_ID = "com.microsoft.bing:id/sa_home_scroll_view_nested"
 TEXT_STREAKS = "Streaks"
 TEXT_CHECKIN = "Check in"
 
+# ── Points balance identifier ───────────────────────────────────────
+POINTS_LABEL_TEXT = "pts"  # text label sitting just right of the points number on Rewards page
+
 # ── Timing (seconds) ──────────────────────────────────────────────
 BACK_WAIT            = 2.5  # Pause after pressing back
 REWARDS_READ_WAIT_MIN = 4   # Hold time per reward card (min)

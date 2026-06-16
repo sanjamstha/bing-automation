@@ -93,6 +93,14 @@ def _format_checkin(checkin_str):
     # Fallback: truncate to 16 chars so the table doesn't blow up
     return s[:16]
 
+def _format_points(daily_result):
+    """Returns the comma-formatted current points balance, e.g. '3,753'."""
+    if daily_result is None:
+        return "—"
+    points = daily_result.get("current_points")
+    if points is None:
+        return "—"
+    return f"{points:,}"
 
 def _format_daily(daily_result):
     """Returns total points string from daily result, e.g. '+35'."""
@@ -124,7 +132,7 @@ def _build_summary_lines(results):
     Builds the summary table and errors section as a list of strings.Used by both _print_summary() (console) and _save_summary() (file) so the output is always identical between the two.
     """
     # ── Build rows ─────────────────────────────────────────────────
-    headers = ["Device Name", "Startup", "Check In", "Daily Set", "Articles Read", "Search to Earn"]
+    headers = ["Device Name", "Startup", "Current Pts", "Check In", "Daily Set", "Articles Read", "Search to Earn"]
 
     rows = []
     for r in results:
@@ -134,6 +142,7 @@ def _build_summary_lines(results):
         rows.append([
             r["label"],
             "True" if r["startup"] else "False",
+            _format_points(r["daily"]),
             _format_checkin(r["daily"].get("checkin") if r["daily"] else None),
             _format_daily(r["daily"]),
             _format_articles(r["articles"]),
@@ -263,6 +272,8 @@ def _run_on_device(args):
 
         # ── Tasks ──────────────────────────────────────────────────
         result["daily"]    = _run_daily(d)
+        if result["daily"] is not None and result["daily"].get("current_points") is None:
+            result["errors"].append("Could not read current points balance")
         result["articles"] = _run_articles(d)
         result["search"]   = _run_search(d)
         _teardown(d)

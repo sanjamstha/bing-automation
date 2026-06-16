@@ -10,9 +10,7 @@ Check-in outcomes:
   - Streaks visible, no Check-in btn   →  SKIPPED — already done today
 """
 
-import time
-import random
-
+import time, random
 from config import (
     BING_PACKAGE,
     REWARDS_CARD_ID,
@@ -29,7 +27,7 @@ from config import (
     POPUP_CLOSE_IDS,
 )
 from core.device import log, go_back_to_home, dismiss_popup, launch_bing, ensure_home_screen
-
+from tasks.points import get_current_points
 
 # ── Rewards page navigation ────────────────────────────────────────
 
@@ -354,7 +352,7 @@ def run(d):
     """
     Execute the full Daily Rewards task on an already-connected device.
     Assumes Bing is running and the home screen is confirmed before calling.
-    Returns a result dict with keys: checkin, daily_collected, more_collected.
+    Returns a result dict with keys: checkin, daily_collected, more_collected, current_points.
     """
     # Step 0: Clear any popup that may have appeared since startup
     log(" [0/3] Checking for popups before opening Rewards...")
@@ -381,6 +379,11 @@ def run(d):
             log("[ABORT] Rewards page did not load and re-navigation failed.")
             return None
 
+    # Step 2b: Read current points balance — before any actions in this run
+    # change it, so this reflects the starting balance for the day.
+    log("[2b/3] Reading current points balance...")
+    current_points = get_current_points(d)
+
     # Step 3a: Check-in
     checkin_result = do_checkin(d)
 
@@ -400,6 +403,7 @@ def run(d):
         "checkin":         checkin_result,
         "daily_collected": daily_collected,
         "more_collected":  more_collected,
+        "current_points":  current_points,
     }
 
 
