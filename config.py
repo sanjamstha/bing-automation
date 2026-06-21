@@ -23,8 +23,8 @@ POINTS_LABEL_TEXT = "pts"  # text label sitting just right of the points number 
 
 # ── Timing (seconds) ──────────────────────────────────────────────
 BACK_WAIT            = 2.5  # Pause after pressing back
-REWARDS_READ_WAIT_MIN = 4   # Hold time per reward card (min)
-REWARDS_READ_WAIT_MAX = 6.5   # Hold time per reward card (max)
+REWARDS_READ_WAIT_MIN = 5.5   # Hold time per reward card (min)
+REWARDS_READ_WAIT_MAX = 7.5   # Hold time per reward card (max)
 REWARDS_PAGE_TIMEOUT = 15   # Max wait for Rewards WebView to load
 LAUNCH_SETTLE_WAIT   = 5    # Wait after Bing reaches foreground for UI to render
 HOME_SETTLE_WAIT     = 2    # Wait after home screen confirmed for widgets to draw

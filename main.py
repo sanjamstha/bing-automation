@@ -157,7 +157,7 @@ def _build_summary_lines(results):
 
     sep         = "  "
     total_width = sum(col_widths) + len(sep) * (len(headers) - 1)
-    rule        = "─" * total_width
+    rule        = "-" * total_width
 
     def _row_str(cells):
         return sep.join(c.ljust(w) for c, w in zip(cells, col_widths))
