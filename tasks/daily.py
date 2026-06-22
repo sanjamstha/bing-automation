@@ -25,6 +25,7 @@ from config import (
     MAX_MISSES,
     POPUP_CONTAINER_ID,
     POPUP_CLOSE_IDS,
+    HOME_ACTIVITY
 )
 from core.device import log, go_back_to_home, dismiss_popup, launch_bing, ensure_home_screen
 from tasks.points import get_current_points
@@ -32,16 +33,57 @@ from tasks.points import get_current_points
 # ── Rewards page navigation ────────────────────────────────────────
 
 def open_rewards_page(d):
-    card = d(resourceId=REWARDS_CARD_ID, description=REWARDS_CARD_DESC)
-    if not card.exists:
-        card = d(resourceId=REWARDS_CARD_TITLE, text=REWARDS_CARD_DESC)
-    if not card.exists:
-        log("  [!] Rewards card not found")
-        return False
-    log("  Tapping Rewards card...")
-    card.click()
-    return True
+    def _find_card():
+        card = d(resourceId=REWARDS_CARD_ID, description=REWARDS_CARD_DESC)
+        if not card.exists:
+            card = d(resourceId=REWARDS_CARD_TITLE, text=REWARDS_CARD_DESC)
+        if not card.exists:
+            return False
+        log("  Tapping Rewards card...")
+        card.click()
+        return True
 
+    # First attempt
+    if _find_card():
+        return True
+
+    # Card not found — check current location and recover
+    package  = d.app_current().get("package", "")
+    activity = d.app_current().get("activity", "")
+
+    # Branch C — already on home screen, selectors likely changed
+    if BING_PACKAGE in package and HOME_ACTIVITY in activity:
+        log("  [!] Rewards card not found on home screen.")
+        log("  [!] Already on home screen — selectors may have changed due to a Bing update or device variation.")
+        log(f"  [!] Check REWARDS_CARD_ID and REWARDS_CARD_TITLE in config.py.")
+        return False
+
+    # Branch B — inside Bing but wrong room
+    if BING_PACKAGE in package:
+        log("  [RECOVER] Wrong room inside Bing — navigating back to home screen...")
+        go_back_to_home(d)
+        if ensure_home_screen(d):
+            log("  [RECOVER] Back on home screen — retrying Rewards card lookup...")
+            if _find_card():
+                return True
+            log("  [RECOVER] Card still not found after Branch B — falling through to relaunch...")
+        else:
+            log("  [RECOVER] Could not reach home screen via back — attempting full relaunch...")
+
+    # Branch A — outside Bing entirely, or Branch B fallback
+    else:
+        log(f"  [RECOVER] Outside Bing (current: {package or 'unknown'}) — relaunching...")
+
+    if launch_bing(d) and ensure_home_screen(d):
+        log("  [RECOVER] Back on home screen after relaunch — retrying Rewards card lookup...")
+        if _find_card():
+            return True
+        log("  [!] Card still not found after relaunch — selectors may have changed due to a Bing update or device variation.")
+        log(f"  [!] Check REWARDS_CARD_ID and REWARDS_CARD_TITLE in config.py.")
+    else:
+        log("  [RECOVER] Relaunch failed — giving up.")
+
+    return False
 
 def wait_for_rewards_page(d):
     """
