@@ -161,6 +161,16 @@ def launch_bing(d):
 
     success = d.app_wait(BING_PACKAGE, front=True, timeout=30)
     if not success:
+        # Check if a Google Play update popup is blocking Bing from reaching foreground
+        no_thanks = d(text="NO THANKS")
+        if no_thanks.exists:
+            log("  [POPUP] Google Play update prompt detected — dismissing and retrying...")
+            no_thanks.click()
+            time.sleep(2)
+            log("  Relaunching Bing after popup dismissal...")
+            d.app_start(BING_PACKAGE)
+            success = d.app_wait(BING_PACKAGE, front=True, timeout=30)
+    if not success:
         log("  [FAIL] Bing did not reach foreground within 30s")
         log("         Is Bing installed? Run: adb shell pm list packages | findstr bing")
         return False
