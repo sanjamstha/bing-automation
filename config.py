@@ -40,10 +40,17 @@ MAX_MISSES     = 3   # Max consecutive misses before giving up on reward cards
 MAX_FAILS      = 3   # Max consecutive failures before aborting article read loop
 
 # ── Article reader defaults ────────────────────────────────────────
-ARTICLE_COUNT_MIN    = 10    # articles to read (min)
-ARTICLE_COUNT_MAX    = 12   # articles to read (max)
-ARTICLE_DURATION_MIN = 7    # seconds per article (min)
-ARTICLE_DURATION_MAX = 9.5   # seconds per article (max
+ARTICLE_COUNT_MIN    = 10    # fallback article count (min) — used when Read to Earn check fails
+ARTICLE_COUNT_MAX    = 12    # fallback article count (max) — used when Read to Earn check fails
+ARTICLE_DURATION_MIN = 7     # seconds per article (min)
+ARTICLE_DURATION_MAX = 9.5   # seconds per article (max)
+
+# ── Read to Earn identifiers ──────────────────────────────────────────
+READ_TO_EARN_DESC  = "Read to earn"  # descriptionContains selector on Rewards page
+
+# ── Read to Earn bonus ────────────────────────────────────────────────
+ARTICLE_BONUS_MIN  = 1   # extra articles added on top of calculated count (min)
+ARTICLE_BONUS_MAX  = 3   # extra articles added on top of calculated count (max)
 
 # ── Search to Earn identifiers ────────────────────────────────────────
 SEARCH_OVERLAY_ID   = "com.microsoft.bing:id/input_hint_view"  # confirms overlay is open

@@ -3,3 +3,4 @@ venv/
 launcher.py
 bing-logs/
 *.bat
+notify.py
