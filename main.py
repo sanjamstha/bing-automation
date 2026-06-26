@@ -111,10 +111,13 @@ def _format_daily(daily_result):
 
 
 def _format_articles(articles_result):
-    """Returns 'read/limit' string, e.g. '11/11'."""
+    """Returns 'read/limit' string, e.g. '11/11'. Shows 'done' if limit was 0."""
     if articles_result is None:
         return "—"
-    return f"{articles_result.get('read_count', 0)}/{articles_result.get('articles_limit', 0)}"
+    limit = articles_result.get("articles_limit", 0)
+    if limit == 0:
+        return "done"
+    return f"{articles_result.get('read_count', 0)}/{limit}"
 
 
 def _format_search(search_result):
@@ -164,14 +167,12 @@ def _build_summary_lines(results):
 
     lines = []
     lines.append("")
-    lines.append("=" * total_width)
-    lines.append("  SUMMARY REPORT")
-    lines.append("=" * total_width)
+    lines.append("--- SUMMARY REPORT ---")
+    lines.append(rule)
     lines.append(_row_str(headers))
     lines.append(rule)
     for row in rows:
         lines.append(_row_str(row))
-    lines.append("=" * total_width)
 
     # Errors section
     all_errors = []
