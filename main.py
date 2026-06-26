@@ -77,6 +77,19 @@ def _run_search(d):
     search.print_report(result)
     return result
 
+# ── Recheck ────────────────────────────────────────────────────────
+def _recheck_on_device(d, result):
+    """
+    Reruns all 3 tasks once after the initial pass, before teardown.
+    Each task is self-managing — it checks the rewards page state itself
+    and exits cleanly if already completed today. No conditions needed here.
+    """
+    log("RECHECK PASS")
+    result["daily"]    = _run_daily(d)
+    result["articles"] = _run_articles(d)
+    result["search"]   = _run_search(d)
+
+
 # ── Summary report helpers ─────────────────────────────────────────
 
 def _format_checkin(checkin_str):
@@ -103,10 +116,12 @@ def _format_points(daily_result):
     return f"{points:,}"
 
 def _format_daily(daily_result):
-    """Returns total points string from daily result, e.g. '+35'."""
+    """Returns total points string from daily result, e.g. '+35'. Shows 'done' if nothing collected."""
     if daily_result is None:
         return "—"
     pts = daily_result.get("daily_collected", 0) * 10 + daily_result.get("more_collected", 0) * 5
+    if pts == 0:
+        return "done"
     return f"+{pts}"
 
 
@@ -132,7 +147,7 @@ def _format_search(search_result):
 
 def _build_summary_lines(results):
     """
-    Builds the summary table and errors section as a list of strings.Used by both _print_summary() (console) and _save_summary() (file) so the output is always identical between the two.
+    Builds the summary table and errors section as a list of strings.Used by both _print_summary() (console) and _save_summary() (file) so the output is always identical the two.
     """
     # ── Build rows ─────────────────────────────────────────────────
     headers = ["Device Name", "Startup", "Current Pts", "Check In", "Daily Set", "Articles Read", "Search to Earn"]
@@ -277,6 +292,7 @@ def _run_on_device(args):
             result["errors"].append("Could not read current points balance")
         result["articles"] = _run_articles(d)
         result["search"]   = _run_search(d)
+        _recheck_on_device(d, result)
         _teardown(d)
         log("Device run complete ✓")
 
