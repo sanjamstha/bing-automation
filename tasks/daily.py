@@ -435,7 +435,7 @@ def run(d):
 
     # Step 3c: More Activities — 1 card worth 5 pts
     log(" [3b/3] Collecting More Activities cards (earn 5 points)...")
-    more_collected = collect_cards(d, "5", total_cards=1, section_label="More")
+    more_collected = collect_cards(d, "5", total_cards=2, section_label="More")
 
     # Return to Bing home screen
     log(" Returning to home screen...")

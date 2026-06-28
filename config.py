@@ -22,11 +22,11 @@ TEXT_CHECKIN = "Check in"
 POINTS_LABEL_TEXT = "pts"  # text label sitting just right of the points number on Rewards page
 
 # ── Timing (seconds) ──────────────────────────────────────────────
-BACK_WAIT            = 2.5  # Pause after pressing back
-REWARDS_READ_WAIT_MIN = 5.5   # Hold time per reward card (min)
-REWARDS_READ_WAIT_MAX = 7.5   # Hold time per reward card (max)
+BACK_WAIT            = 11  # Pause after pressing back
+REWARDS_READ_WAIT_MIN = 13   # Hold time per reward card (min)
+REWARDS_READ_WAIT_MAX = 23   # Hold time per reward card (max)
 REWARDS_PAGE_TIMEOUT = 15   # Max wait for Rewards WebView to load
-LAUNCH_SETTLE_WAIT   = 5    # Wait after Bing reaches foreground for UI to render
+LAUNCH_SETTLE_WAIT   = 7    # Wait after Bing reaches foreground for UI to render
 HOME_SETTLE_WAIT     = 2    # Wait after home screen confirmed for widgets to draw
 
 # ── Popup detection & dismissal ────────────────────────────────────
@@ -36,14 +36,14 @@ POPUP_CLOSE_IDS    = [
     "com.microsoft.bing:id/dialog_close",         # Generic Bing dialog close
 ]
 # ── Retry limits ──────────────────────────────────────────────────
-MAX_MISSES     = 3   # Max consecutive misses before giving up on reward cards
-MAX_FAILS      = 3   # Max consecutive failures before aborting article read loop
+MAX_MISSES     = 2   # Max consecutive misses before giving up on reward cards
+MAX_FAILS      = 2   # Max consecutive failures before aborting article read loop
 
 # ── Article reader defaults ────────────────────────────────────────
 ARTICLE_COUNT_MIN    = 10    # fallback article count (min) — used when Read to Earn check fails
 ARTICLE_COUNT_MAX    = 12    # fallback article count (max) — used when Read to Earn check fails
-ARTICLE_DURATION_MIN = 7     # seconds per article (min)
-ARTICLE_DURATION_MAX = 9.5   # seconds per article (max)
+ARTICLE_DURATION_MIN = 15     # seconds per article (min)
+ARTICLE_DURATION_MAX = 30   # seconds per article (max)
 
 # ── Read to Earn identifiers ──────────────────────────────────────────
 READ_TO_EARN_DESC  = "Read to earn"  # descriptionContains selector on Rewards page
@@ -59,10 +59,10 @@ SEARCH_ACTION_BACK  = "com.microsoft.bing:id/action_back"      # close button on
 SEARCH_TO_EARN_DESC = "Search to earn"                         # descriptionContains selector
 
 # ── Search to Earn timing ────────────────────────────────────────
-SEARCH_HOLD_MIN     = 7     # seconds to hold on results page (min)
-SEARCH_HOLD_MAX     = 9     # seconds to hold on results page (max)
-SEARCH_WAIT_MIN     = 11     # seconds to wait between searches (min)
-SEARCH_WAIT_MAX     = 17    # seconds to wait between searches (max)
+SEARCH_HOLD_MIN     = 13     # seconds to hold on results page (min)
+SEARCH_HOLD_MAX     = 23     # seconds to hold on results page (max)
+SEARCH_WAIT_MIN     = 15     # seconds to wait between searches (min)
+SEARCH_WAIT_MAX     = 30    # seconds to wait between searches (max)
 SEARCH_BONUS_MIN    = 1     # extra searches added on top of calculated count (min)
 SEARCH_BONUS_MAX    = 3     # extra searches added on top of calculated count (max)
 
