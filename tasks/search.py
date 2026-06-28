@@ -1,13 +1,18 @@
 """
 tasks/search.py — Search to Earn
 
-Flow:
-  Start on Bing homepage → Open Rewards page → Scroll until "Search to earn" is visible
-  → Tap "Search to earn" → Wait for search overlay → Type query → Hold results → Back
-  → Wait between searches → Repeat for SEARCH_COUNT total searches → Return to home screen
+Fast path (normal):
+  Receive pre-parsed search_earn_y from daily.py → already on Rewards page
+  → scroll to 'Search to earn' row → run search loop → return home.
 
-Recovery: when any step in the search loop fails, a unified location check runs a
-3-branch strategy before retrying once:
+Fallback path (daily.run() failed or aborted):
+  search_earn_y is None → self-sufficient: open Rewards page, parse, proceed.
+
+Sentinel:
+  search_earn_y is DONE → already completed today → skip immediately.
+
+Recovery within the search loop: when any step fails, a unified location
+check runs a 3-branch strategy before retrying once:
 
   BRANCH A — Outside Bing entirely (or Branch B fallback):
     → launch_bing() → ensure_home_screen() → dismiss_popup()
@@ -52,7 +57,7 @@ from core.device import (
     ensure_home_screen,
     dismiss_popup,
 )
-from tasks.daily import open_rewards_page, wait_for_rewards_page
+from tasks.daily import open_rewards_page, wait_for_rewards_page, DONE
 from tasks.queries import get_queries
 
 
@@ -71,7 +76,7 @@ def _get_geometry(d):
 
 
 def _scroll_down_one(d):
-    """Swipe up one step to scroll the rewards page down. Mirrors daily.py logic."""
+    """Swipe up one step to scroll the rewards page down."""
     geo = _get_geometry(d)
     try:
         d.swipe(geo["cx"], geo["swipe_start"], geo["cx"], geo["swipe_end"], 0.35)
@@ -227,7 +232,7 @@ def _check_and_parse_row(row):
         log("  'Search to earn' is not clickable — already completed today ✓")
         return False, 0
 
-    desc = info.get("contentDescription", "")
+    desc    = info.get("contentDescription", "")
     y_value = _parse_y_from_desc(desc)
 
     if y_value is None:
@@ -283,11 +288,11 @@ def _do_single_search(d, query):
         return False
 
     search_input.click()
-    search_input.clear_text()   # Fix 4: clear any stale text from a previous search
+    search_input.clear_text()
     search_input.set_text(query)
     time.sleep(0.5)
 
-    # Fix 3: verify text was actually entered — retry set_text once if mismatch
+    # Verify text was actually entered — retry set_text once if mismatch
     actual = search_input.get_text()
     if actual != query:
         log(f"  [WARN] Text mismatch (got '{actual}') — retrying set_text...")
@@ -310,7 +315,7 @@ def _do_single_search(d, query):
     d.press("back")
     time.sleep(2.5)  # settle after back
 
-    # Fix 2: confirm we actually landed back on the rewards page
+    # Confirm we actually landed back on the rewards page
     if not _on_rewards_page(d):
         log("  [FAIL] Back press did not return to rewards page — unexpected location.")
         return False
@@ -389,86 +394,28 @@ def _recover_to_search_earn(d):
     return False
 
 
-# ── Task entry point ───────────────────────────────────────────────
+# ── Search loop (shared by fast path and fallback path) ────────────
 
-def run(d):
+def _run_search_loop(d, y_value):
     """
-    Execute the Search to Earn task on an already-connected device.
-    Assumes Bing is running and the home screen is confirmed before calling.
-
-    Search count is derived dynamically from the rewards page:
-      y_value = daily point limit parsed from 'Search to earn' content-desc
-      search_count = (y_value // 3) + random bonus of 1–3
-
-    Returns a result dict with keys: search_count, target_count.
-    Returns {"search_count": 0, "target_count": 0} if already completed today.
-    Returns None only on hard abort (rewards page unreachable).
+    Runs the full search loop given a pre-validated y_value.
+    Assumes the device is currently on the Rewards page with the
+    'Search to earn' row accessible.
+    Returns a result dict: {search_count, target_count}.
     """
-    log(f" Starting Search to Earn...")
-
-    # Step 0: Clear any popup that may have appeared since startup
-    log(" [0/4] Checking for popups before opening Rewards...")
-    dismiss_popup(d)
-
-    # Step 1: Open rewards page
-    log(" [1/4] Opening Rewards page...")
-    if not open_rewards_page(d):
-        log("[ABORT] Could not open Rewards page.")
-        return None
-
-    # Step 2: Wait for rewards page to load
-    log(" [2/4] Waiting for Rewards page to load...")
-    if not wait_for_rewards_page(d):
-        # Tier 2 popup dismissal may have cold-relaunched back to home screen.
-        # Attempt one re-navigation before giving up.
-        log("  [RECOVER] Rewards page did not load — attempting re-navigation...")
-        if ensure_home_screen(d) and _navigate_to_rewards(d):
-            log("  [RECOVER] Re-navigated to Rewards page successfully ✓")
-        else:
-            log("[ABORT] Rewards page did not load and re-navigation failed.")
-            return None
-
-    # Step 3: Scroll to "Search to earn" and parse daily limit
-    log(" [3/4] Locating 'Search to earn' section and parsing daily limit...")
-    found, y_value, status = _scroll_to_search_earn(d)
-
-    if not found:
-        if status == "done":
-            # Already completed today or parse failed — logged inside _scroll_to_search_earn
-            go_back_to_home(d)
-            return {"search_count": 0, "target_count": 0}
-
-        # status == "exhausted" — scroll attempts ran out, try 3-branch recovery once
-        log("  [RECOVER] Scroll exhausted — running location check and recovery...")
-        if not _recover_to_search_earn(d):
-            log("[ABORT] Could not locate 'Search to earn' after recovery.")
-            go_back_to_home(d)
-            return {"search_count": 0, "target_count": 0}
-
-        # Retry scroll after successful recovery
-        found, y_value, status = _scroll_to_search_earn(d)
-        if not found:
-            log("[ABORT] Still could not locate 'Search to earn' after recovery.")
-            go_back_to_home(d)
-            return {"search_count": 0, "target_count": 0}
-
-    # Calculate target: base count from points limit + random bonus
     target_count = (y_value // 3) + random.randint(SEARCH_BONUS_MIN, SEARCH_BONUS_MAX)
     log(f"  Target searches: {y_value} pts ÷ 3 = {y_value // 3} base + bonus = {target_count} total")
 
-    # Generate unique search queries for this run
     log(f"  Fetching {target_count} search queries...")
     queries = get_queries(target_count)
 
-    # Step 4: Search loop
-    log(f" [4/4] Starting search loop ({target_count} searches)...")
-    search_count  = 0
-    recovered     = False  # allow max one recovery per run
+    log(f" Starting search loop ({target_count} searches)...")
+    search_count = 0
+    recovered    = False  # allow max one recovery per run
 
     for i in range(1, target_count + 1):
         log(f"   — Search {i}/{target_count} —")
 
-        # ── Attempt the full search iteration ─────────────────────
         success = (
             _tap_search_to_earn(d)
             and _wait_for_search_overlay(d)
@@ -477,14 +424,13 @@ def run(d):
 
         if success:
             search_count += 1
-            # Wait between searches (skip after the last one)
             if i < target_count:
                 wait = random.uniform(SEARCH_WAIT_MIN, SEARCH_WAIT_MAX)
                 log(f"  Waiting {wait:.1f}s before next search...")
                 time.sleep(wait)
             continue
 
-        # ── Iteration failed — attempt recovery (once only) ────────
+        # Iteration failed — attempt recovery (once only)
         if recovered:
             log(f"  [STOP] Iteration {i} failed after already recovering once — stopping.")
             break
@@ -496,7 +442,6 @@ def run(d):
             log("  [STOP] Recovery unsuccessful — stopping search loop.")
             break
 
-        # Retry the same iteration index after successful recovery
         log(f"  [RECOVER] Retrying search {i}/{target_count}...")
         success = (
             _tap_search_to_earn(d)
@@ -514,14 +459,109 @@ def run(d):
             log(f"  [STOP] Retry of iteration {i} also failed — stopping.")
             break
 
-    # Return to Bing home screen
+    return {"search_count": search_count, "target_count": target_count}
+
+
+# ── Task entry point ───────────────────────────────────────────────
+
+def run(d, search_earn_y=None):
+    """
+    Execute the Search to Earn task on an already-connected device.
+
+    search_earn_y (from daily.run()):
+      int  → active row, already on Rewards page — skip open/wait/scroll,
+             go straight to search loop.
+      DONE → already completed today — skip immediately, go home.
+      None → daily failed or wasn't called — self-sufficient fallback:
+             open Rewards page, parse, proceed.
+
+    Returns a result dict with keys: search_count, target_count.
+    Returns {"search_count": 0, "target_count": 0} if already completed today.
+    Returns None only on hard abort (rewards page unreachable in fallback path).
+    """
+    log(" Starting Search to Earn...")
+
+    # ── Fast path: pre-parsed value provided by daily.run() ────────
+    if search_earn_y is not None:
+
+        if search_earn_y is DONE:
+            log(" Search to Earn already completed today (confirmed by daily) — skipping.")
+            go_back_to_home(d)
+            return {"search_count": 0, "target_count": 0}
+
+        # int — already on Rewards page, row is active
+        log(f" [FAST PATH] Pre-parsed search limit: {search_earn_y} pts — skipping rewards page open.")
+        log(" [1/2] Scrolling to 'Search to earn' row...")
+        found, y_value, status = _scroll_to_search_earn(d)
+
+        if not found:
+            if status == "done":
+                log(" 'Search to earn' completed — skipping.")
+                go_back_to_home(d)
+                return {"search_count": 0, "target_count": 0}
+            # exhausted — try recovery once
+            log("  [RECOVER] Scroll exhausted on fast path — attempting recovery...")
+            if not _recover_to_search_earn(d):
+                log("[ABORT] Could not locate 'Search to earn' after recovery.")
+                go_back_to_home(d)
+                return {"search_count": 0, "target_count": 0}
+            found, y_value, status = _scroll_to_search_earn(d)
+            if not found:
+                log("[ABORT] Still could not locate 'Search to earn' after recovery.")
+                go_back_to_home(d)
+                return {"search_count": 0, "target_count": 0}
+
+        log(" [2/2] Running search loop...")
+        result = _run_search_loop(d, y_value)
+        log(" Returning to home screen...")
+        go_back_to_home(d)
+        return result
+
+    # ── Fallback path: daily.run() failed — open rewards page ourselves ─
+    log(" [FALLBACK] No pre-parsed value — opening Rewards page independently...")
+
+    log(" [0/4] Checking for popups before opening Rewards...")
+    dismiss_popup(d)
+
+    log(" [1/4] Opening Rewards page...")
+    if not open_rewards_page(d):
+        log("[ABORT] Could not open Rewards page.")
+        return None
+
+    log(" [2/4] Waiting for Rewards page to load...")
+    if not wait_for_rewards_page(d):
+        log("  [RECOVER] Rewards page did not load — attempting re-navigation...")
+        if ensure_home_screen(d) and _navigate_to_rewards(d):
+            log("  [RECOVER] Re-navigated to Rewards page successfully ✓")
+        else:
+            log("[ABORT] Rewards page did not load and re-navigation failed.")
+            return None
+
+    log(" [3/4] Locating 'Search to earn' section and parsing daily limit...")
+    found, y_value, status = _scroll_to_search_earn(d)
+
+    if not found:
+        if status == "done":
+            go_back_to_home(d)
+            return {"search_count": 0, "target_count": 0}
+
+        log("  [RECOVER] Scroll exhausted — running location check and recovery...")
+        if not _recover_to_search_earn(d):
+            log("[ABORT] Could not locate 'Search to earn' after recovery.")
+            go_back_to_home(d)
+            return {"search_count": 0, "target_count": 0}
+
+        found, y_value, status = _scroll_to_search_earn(d)
+        if not found:
+            log("[ABORT] Still could not locate 'Search to earn' after recovery.")
+            go_back_to_home(d)
+            return {"search_count": 0, "target_count": 0}
+
+    log(" [4/4] Running search loop...")
+    result = _run_search_loop(d, y_value)
     log(" Returning to home screen...")
     go_back_to_home(d)
-
-    return {
-        "search_count": search_count,
-        "target_count": target_count,
-    }
+    return result
 
 
 def print_report(result):

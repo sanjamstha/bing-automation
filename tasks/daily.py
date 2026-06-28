@@ -1,13 +1,20 @@
 """
-tasks/daily.py — Daily Rewards: Check-in + Daily Set + More Activities
+tasks/daily.py — Daily Rewards: Check-in + Daily Set + More Activities + Earn Parsing
 
 Flow:
-  Open Rewards → [Check-in if streaks visible] → Daily Set → More Activities → Return home
+  Open Rewards → [Check-in if streaks visible] → Daily Set → More Activities
+  → Scroll to top → Parse "Search to earn" → Parse "Read to earn"
+  → Stay on Rewards page (search.py picks up from here)
 
 Check-in outcomes:
   - Streaks section not visible today  →  SKIPPED — Streaks not shown today
   - Streaks visible, Check-in present  →  Attempted and completed
   - Streaks visible, no Check-in btn   →  SKIPPED — already done today
+
+Earn parsing return values (search_earn_y, read_earn_remaining):
+  - int   → row is active, use this value for target calculation
+  - None  → row not found / parse failed → downstream task uses its own fallback
+  - DONE  → row confirmed not clickable → downstream task skips entirely
 """
 
 import time, random
@@ -23,12 +30,20 @@ from config import (
     REWARDS_READ_WAIT_MAX,
     REWARDS_PAGE_TIMEOUT,
     MAX_MISSES,
+    MAX_SCROLL_ATTEMPTS,
     POPUP_CONTAINER_ID,
     POPUP_CLOSE_IDS,
-    HOME_ACTIVITY
+    HOME_ACTIVITY,
+    SEARCH_TO_EARN_DESC,
+    READ_TO_EARN_DESC,
 )
 from core.device import log, go_back_to_home, dismiss_popup, launch_bing, ensure_home_screen
 from tasks.points import get_current_points
+
+# ── Sentinel ───────────────────────────────────────────────────────
+# Signals that a row was confirmed not-clickable (already done today).
+# Distinct from None (parse failed / not found → use fallback).
+DONE = object()
 
 # ── Rewards page navigation ────────────────────────────────────────
 
@@ -163,7 +178,13 @@ def _button_in_safe_zone(bounds, geo):
     return geo["safe_top"] < cy < geo["safe_bottom"]
 
 
-# ── Check-in (Step 4) ──────────────────────────────────────────────
+def _in_safe_zone(bounds, geo):
+    """Returns True if the element's vertical center is within the safe interaction zone."""
+    cy = (bounds.get("top", 0) + bounds.get("bottom", 0)) / 2
+    return geo["safe_top"] < cy < geo["safe_bottom"]
+
+
+# ── Check-in ───────────────────────────────────────────────────────
 
 def do_checkin(d):
     """
@@ -223,7 +244,7 @@ def do_checkin(d):
         return "SUCCESS ✓ (Action sent to system layer)"
 
 
-# ── Reward card collection (Step 5) ───────────────────────────────
+# ── Reward card collection ─────────────────────────────────────────
 
 def _find_card_nodes(d, earn_keyword):
     """
@@ -247,7 +268,7 @@ def _on_rewards_page(d):
         d(text="Today's points").exists
         or d(text="Daily set").exists
         or d(text="Streaks").exists
-        or d(text="More activities").exists      
+        or d(text="More activities").exists
     )
 
 
@@ -348,7 +369,7 @@ def collect_cards(d, earn_keyword, total_cards, section_label):
         return collected
 
     # ── Miss counter exhausted — location check ────────────────────
-    package  = d.app_current().get("package", "")
+    package    = d.app_current().get("package", "")
     on_rewards = _on_rewards_page(d)
 
     # BRANCH C — right room, cards just not available
@@ -388,26 +409,226 @@ def collect_cards(d, earn_keyword, total_cards, section_label):
     return collected
 
 
+# ── Earn row parsing (called after card collection) ────────────────
+
+def _scroll_to_top(d):
+    """
+    Scrolls the rewards page back to the top using uiautomator2's built-in
+    scroll-to-beginning. Falls back to a fixed number of upward swipes if
+    no scrollable container is found.
+    """
+    log("  Scrolling rewards page back to top...")
+    try:
+        scrollable = d(scrollable=True)
+        if scrollable.exists:
+            scrollable.scroll.toBeginning(steps=40)
+            time.sleep(1.5)
+            return
+    except Exception as e:
+        log(f"  [WARN] scroll.toBeginning failed ({e.__class__.__name__}) — falling back to swipes.")
+
+    # Fallback: swipe down (scroll up) several times
+    geo = _get_geometry(d)
+    for _ in range(6):
+        try:
+            # Swipe direction reversed: finger moves DOWN to scroll content UP to top
+            d.swipe(geo["cx"], geo["swipe_end"], geo["cx"], geo["swipe_start"], 0.35)
+        except Exception:
+            pass
+        time.sleep(1.0)
+
+
+def _parse_search_earn(d):
+    """
+    Scrolls to find the 'Search to earn' row and parses its daily point limit.
+
+    Returns:
+      int  — row is active; this is the Y value (daily point limit)
+      DONE — row is not clickable (already completed today)
+      None — row not found or parse failed (caller uses fallback)
+    """
+    log("  Parsing 'Search to earn' row...")
+    geo = _get_geometry(d)
+
+    for attempt in range(1, MAX_SCROLL_ATTEMPTS + 1):
+        row = d(descriptionContains=SEARCH_TO_EARN_DESC)
+        if row.exists:
+            bounds = row.info.get("bounds", {})
+            if _in_safe_zone(bounds, geo):
+                info = row.info
+                if not info.get("clickable", False):
+                    log("  'Search to earn' not clickable — already done today ✓")
+                    return DONE
+                desc    = info.get("contentDescription", "")
+                y_value = _parse_y_from_search_desc(desc)
+                if y_value is None:
+                    log(f"  [FAIL] Could not parse search limit from: '{desc}'")
+                    return None
+                log(f"  'Search to earn' parsed: {y_value} pts limit ✓")
+                return y_value
+            else:
+                log("  'Search to earn' found but outside safe zone — scrolling into view...")
+        else:
+            done_row = d(textContains=SEARCH_TO_EARN_DESC)
+            if done_row.exists and not done_row.info.get("clickable", True):
+                log("  'Search to earn' completed row found — already done today ✓")
+                return DONE
+            log(f"  'Search to earn' not visible — scrolling (attempt {attempt}/{MAX_SCROLL_ATTEMPTS})...")
+
+        _scroll_down_one(d)
+
+    # Final last-chance scan
+    row = d(descriptionContains=SEARCH_TO_EARN_DESC)
+    if row.exists:
+        bounds = row.info.get("bounds", {})
+        if _in_safe_zone(bounds, geo):
+            info = row.info
+            if not info.get("clickable", False):
+                log("  'Search to earn' not clickable — already done today ✓")
+                return DONE
+            desc    = info.get("contentDescription", "")
+            y_value = _parse_y_from_search_desc(desc)
+            if y_value is not None:
+                log(f"  'Search to earn' parsed on final scroll: {y_value} pts ✓")
+                return y_value
+
+    done_row = d(textContains=SEARCH_TO_EARN_DESC)
+    if done_row.exists and not done_row.info.get("clickable", True):
+        log("  'Search to earn' completed row found on final scan ✓")
+        return DONE
+
+    log("  [FAIL] 'Search to earn' not found after max scroll attempts.")
+    return None
+
+
+def _parse_read_earn(d):
+    """
+    Scrolls to find the 'Read to earn' row and parses the remaining point balance.
+
+    Returns:
+      int  — row is active; this is remaining = Y - X
+      DONE — row is not clickable (already completed today)
+      None — row not found or parse failed (caller uses fallback)
+    """
+    log("  Parsing 'Read to earn' row...")
+    geo = _get_geometry(d)
+
+    for attempt in range(1, MAX_SCROLL_ATTEMPTS + 1):
+        row = d(descriptionContains=READ_TO_EARN_DESC)
+        if row.exists:
+            bounds = row.info.get("bounds", {})
+            if _in_safe_zone(bounds, geo):
+                info = row.info
+                if not info.get("clickable", False):
+                    log("  'Read to earn' not clickable — already done today ✓")
+                    return DONE
+                desc = info.get("contentDescription", "")
+                x_value, y_value = _parse_xy_from_read_desc(desc)
+                if x_value is None or y_value is None:
+                    log(f"  [FAIL] Could not parse read limit from: '{desc}'")
+                    return None
+                remaining = y_value - x_value
+                log(f"  'Read to earn' parsed: {x_value}/{y_value} pts — {remaining} remaining ✓")
+                return remaining
+            else:
+                log("  'Read to earn' found but outside safe zone — scrolling into view...")
+        else:
+            done_row = d(textContains=READ_TO_EARN_DESC)
+            if done_row.exists and not done_row.info.get("clickable", True):
+                log("  'Read to earn' completed row found — already done today ✓")
+                return DONE
+            log(f"  'Read to earn' not visible — scrolling (attempt {attempt}/{MAX_SCROLL_ATTEMPTS})...")
+
+        _scroll_down_one(d)
+
+    # Final last-chance scan
+    row = d(descriptionContains=READ_TO_EARN_DESC)
+    if row.exists:
+        bounds = row.info.get("bounds", {})
+        if _in_safe_zone(bounds, geo):
+            info = row.info
+            if not info.get("clickable", False):
+                log("  'Read to earn' not clickable — already done today ✓")
+                return DONE
+            desc = info.get("contentDescription", "")
+            x_value, y_value = _parse_xy_from_read_desc(desc)
+            if x_value is not None and y_value is not None:
+                remaining = y_value - x_value
+                log(f"  'Read to earn' parsed on final scroll: {remaining} remaining ✓")
+                return remaining
+
+    done_row = d(textContains=READ_TO_EARN_DESC)
+    if done_row.exists and not done_row.info.get("clickable", True):
+        log("  'Read to earn' completed row found on final scan ✓")
+        return DONE
+
+    log("  [FAIL] 'Read to earn' not found after max scroll attempts.")
+    return None
+
+
+def _parse_y_from_search_desc(desc):
+    """
+    Parses Y (daily point limit) from 'Search to earn' content-desc.
+    Expected format: "Search to earn, , 6 out of 60 points earned"
+    Returns int or None.
+    """
+    try:
+        after = desc.split("out of ")[1]   # "60 points earned"
+        y_str = after.split(" points")[0]  # "60"
+        return int(y_str.strip())
+    except (IndexError, ValueError):
+        return None
+
+
+def _parse_xy_from_read_desc(desc):
+    """
+    Parses X and Y from 'Read to earn' content-desc.
+    Expected format: "Read to earn, , 12 out of 30 points earned"
+    Returns (x_value, y_value) as ints, or (None, None) on failure.
+    """
+    try:
+        before, after = desc.split("out of ")
+        x_str = before.strip().split(" ")[-1]
+        y_str = after.split(" points")[0]
+        return int(x_str.strip()), int(y_str.strip())
+    except (IndexError, ValueError):
+        return None, None
+
+
 # ── Task entry point ───────────────────────────────────────────────
 
 def run(d):
     """
     Execute the full Daily Rewards task on an already-connected device.
     Assumes Bing is running and the home screen is confirmed before calling.
-    Returns a result dict with keys: checkin, daily_collected, more_collected, current_points.
+
+    After collecting cards, scrolls the rewards page back to the top and
+    parses Search to earn then Read to earn — so search.py can pick up
+    directly from this page without a separate rewards page visit.
+
+    Does NOT return to the home screen — search.py starts from here.
+
+    Returns a result dict with keys:
+      checkin, daily_collected, more_collected, current_points,
+      search_earn_y, read_earn_remaining
+
+    search_earn_y / read_earn_remaining:
+      int  → active row, use this value
+      DONE → confirmed done today, downstream task skips
+      None → not found / parse failed, downstream task uses its own fallback
     """
     # Step 0: Clear any popup that may have appeared since startup
-    log(" [0/3] Checking for popups before opening Rewards...")
+    log(" [0/4] Checking for popups before opening Rewards...")
     dismiss_popup(d)
 
     # Step 1: Open Rewards page
-    log(" [1/3] Opening Rewards page...")
+    log(" [1/4] Opening Rewards page...")
     if not open_rewards_page(d):
         log("[ABORT] Could not open Rewards page.")
         return None
 
     # Step 2: Wait for Rewards page to load
-    log(" [2/3] Waiting for Rewards page to load...")
+    log(" [2/4] Waiting for Rewards page to load...")
     if not wait_for_rewards_page(d):
         # A Tier 2 popup dismissal cold-relaunches Bing back to the home screen.
         # Attempt one re-navigation to the Rewards page before giving up.
@@ -421,31 +642,49 @@ def run(d):
             log("[ABORT] Rewards page did not load and re-navigation failed.")
             return None
 
-    # Step 2b: Read current points balance — before any actions in this run
-    # change it, so this reflects the starting balance for the day.
-    log("[2b/3] Reading current points balance...")
+    # Step 2b: Read current points balance before any actions change it
+    log(" [2b/4] Reading current points balance...")
     current_points = get_current_points(d)
 
     # Step 3a: Check-in
     checkin_result = do_checkin(d)
 
     # Step 3b: Daily Set — 3 cards worth 10 pts each
-    log(" [3a/3] Collecting Daily Set cards (earn 10 points)...")
+    log(" [3a/4] Collecting Daily Set cards (earn 10 points)...")
     daily_collected = collect_cards(d, "10", total_cards=3, section_label="Daily")
 
-    # Step 3c: More Activities — 1 card worth 5 pts
-    log(" [3b/3] Collecting More Activities cards (earn 5 points)...")
+    # Step 3c: More Activities — cards worth 5 pts each
+    log(" [3b/4] Collecting More Activities cards (earn 5 points)...")
     more_collected = collect_cards(d, "5", total_cards=2, section_label="More")
 
-    # Return to Bing home screen
-    log(" Returning to home screen...")
-    go_back_to_home(d)
+    # Step 4: Scroll to top, then parse earn rows for search.py and articles.py
+    log(" [4/4] Parsing earn rows for downstream tasks...")
+    if not _on_rewards_page(d):
+        log("  [WARN] Not on rewards page after card collection — attempting recovery...")
+        if not _navigate_to_rewards(d):
+            log("  [WARN] Could not recover to rewards page — search.py and articles.py will handle independently.")
+            go_back_to_home(d)
+            search_earn_y       = None
+            read_earn_remaining = None
+        else:
+            _scroll_to_top(d)
+            search_earn_y       = _parse_search_earn(d)
+            read_earn_remaining = _parse_read_earn(d)
+    else:
+        _scroll_to_top(d)
+        search_earn_y       = _parse_search_earn(d)
+        read_earn_remaining = _parse_read_earn(d)
+
+    # Stay on rewards page — search.py picks up from here
+    log(" Daily task complete. Staying on Rewards page for search.py ✓")
 
     return {
-        "checkin":         checkin_result,
-        "daily_collected": daily_collected,
-        "more_collected":  more_collected,
-        "current_points":  current_points,
+        "checkin":            checkin_result,
+        "daily_collected":    daily_collected,
+        "more_collected":     more_collected,
+        "current_points":     current_points,
+        "search_earn_y":      search_earn_y,
+        "read_earn_remaining": read_earn_remaining,
     }
 
 

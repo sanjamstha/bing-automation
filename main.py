@@ -1,10 +1,19 @@
 """
 main.py — Bing Automation: Entry Point
 
-Automatically detects all connected ADB devices and runs the full automation (Daily Rewards -> Read Articles) on each device in parallel. 
+Automatically detects all connected ADB devices and runs the full automation
+(Daily Rewards → Search → Read Articles) on each device in parallel.
 No user input required — just run the script.
 
-Concurrency is controlled by MAX_WORKERS in config.py. If you have 4 devices and MAX_WORKERS=2, the first 2 start immediately and the remaining 2 are queued — each starts as a slot frees up.
+Concurrency is controlled by MAX_WORKERS in config.py. If you have 4 devices
+and MAX_WORKERS=2, the first 2 start immediately and the remaining 2 are
+queued — each starts as a slot frees up.
+
+Rewards page visit reduction:
+  Initial pass  — 1 visit (daily opens it, search picks up from there,
+                            articles starts from home with pre-parsed value)
+  Recheck pass  — 1 visit (same hand-off pattern)
+  Total: 2 visits per device run (down from 6).
 """
 
 from concurrent.futures import ThreadPoolExecutor
@@ -18,6 +27,7 @@ from core.device import (
 )
 from config import MAX_WORKERS, CONNECT_RETRIES, CONNECT_RETRY_WAIT
 from tasks import daily, articles, search
+from tasks.daily import DONE
 
 
 # ── Startup / teardown ─────────────────────────────────────────────
@@ -42,6 +52,7 @@ def _startup(d):
 
     return True
 
+
 def _teardown(d):
     """
     Post-run cleanup: closes all browser tabs accumulated during the run.
@@ -49,6 +60,7 @@ def _teardown(d):
     """
     log("[TEARDOWN] Running post-task cleanup...")
     close_all_tabs(d)
+
 
 # ── Task runners ───────────────────────────────────────────────────
 
@@ -61,33 +73,70 @@ def _run_daily(d):
     return result
 
 
-def _run_articles(d):
+def _run_search(d, search_earn_y=None):
     log("─" * 52)
-    log("TASK 2/3 — Read Articles")
+    log("TASK 2/3 — Search")
     log("─" * 52)
-    result = articles.run(d)
-    articles.print_report(result)
-    return result
-
-def _run_search(d):
-    log("─" * 52)
-    log("TASK 3/3 — Search")
-    log("─" * 52)
-    result = search.run(d)
+    result = search.run(d, search_earn_y=search_earn_y)
     search.print_report(result)
     return result
 
+
+def _run_articles(d, read_earn_remaining=None):
+    log("─" * 52)
+    log("TASK 3/3 — Read Articles")
+    log("─" * 52)
+    result = articles.run(d, read_earn_remaining=read_earn_remaining)
+    articles.print_report(result)
+    return result
+
+
+# ── Value extraction helpers ───────────────────────────────────────
+
+def _extract_earn_values(daily_result):
+    """
+    Pulls search_earn_y and read_earn_remaining out of daily's result dict.
+    Returns (None, None) if daily_result is None (daily aborted).
+    Both values may be: int (active), DONE (confirmed done), or None (not found).
+    """
+    if daily_result is None:
+        return None, None
+    return (
+        daily_result.get("search_earn_y"),
+        daily_result.get("read_earn_remaining"),
+    )
+
+
 # ── Recheck ────────────────────────────────────────────────────────
+
 def _recheck_on_device(d, result):
     """
     Reruns all 3 tasks once after the initial pass, before teardown.
-    Each task is self-managing — it checks the rewards page state itself
-    and exits cleanly if already completed today. No conditions needed here.
+
+    daily.run() always re-opens the rewards page and re-parses fresh
+    search_earn_y and read_earn_remaining values:
+      - DONE  → task was already completed; downstream skips it
+      - int   → task still has work; downstream runs it (search picks up
+                from the same rewards page, articles from home)
+      - None  → couldn't parse; each downstream task uses its own fallback
+
+    This means the recheck costs exactly 1 rewards page visit regardless
+    of which tasks still have work remaining.
     """
+    log("─" * 52)
     log("RECHECK PASS")
-    result["daily"]    = _run_daily(d)
-    result["articles"] = _run_articles(d)
-    result["search"]   = _run_search(d)
+    log("─" * 52)
+
+    daily_result = _run_daily(d)
+    result["daily"] = daily_result
+
+    search_earn_y, read_earn_remaining = _extract_earn_values(daily_result)
+
+    # Search picks up from the rewards page daily left open
+    result["search"] = _run_search(d, search_earn_y=search_earn_y)
+
+    # Articles starts from home (search returned home at end of its run)
+    result["articles"] = _run_articles(d, read_earn_remaining=read_earn_remaining)
 
 
 # ── Summary report helpers ─────────────────────────────────────────
@@ -103,8 +152,8 @@ def _format_checkin(checkin_str):
         return "N - done"
     if "not shown" in s:
         return "N - missing"
-    # Fallback: truncate to 16 chars so the table doesn't blow up
     return s[:16]
+
 
 def _format_points(daily_result):
     """Returns the comma-formatted current points balance, e.g. '3,753'."""
@@ -114,6 +163,7 @@ def _format_points(daily_result):
     if points is None:
         return "—"
     return f"{points:,}"
+
 
 def _format_daily(daily_result):
     """Returns total points string from daily result, e.g. '+35'. Shows 'done' if nothing collected."""
@@ -147,15 +197,15 @@ def _format_search(search_result):
 
 def _build_summary_lines(results):
     """
-    Builds the summary table and errors section as a list of strings.Used by both _print_summary() (console) and _save_summary() (file) so the output is always identical the two.
+    Builds the summary table and errors section as a list of strings.
+    Used by both _print_summary() (console) and _save_summary() (file)
+    so the output is always identical between the two.
     """
-    # ── Build rows ─────────────────────────────────────────────────
     headers = ["Device Name", "Startup", "Current Pts", "Check In", "Daily Set", "Articles Read", "Search to Earn"]
 
     rows = []
     for r in results:
         if r is None:
-            # _run_on_device returned None (connect failed before label was set)
             continue
         rows.append([
             r["label"],
@@ -167,7 +217,6 @@ def _build_summary_lines(results):
             _format_search(r["search"]),
         ])
 
-    # Compute column widths from headers and data
     col_widths = [len(h) for h in headers]
     for row in rows:
         for i, cell in enumerate(row):
@@ -189,7 +238,6 @@ def _build_summary_lines(results):
     for row in rows:
         lines.append(_row_str(row))
 
-    # Errors section
     all_errors = []
     for r in results:
         if r is None:
@@ -212,6 +260,7 @@ def _print_summary(results):
     for line in _build_summary_lines(results):
         print(line)
 
+
 def _save_summary(results, run_start):
     """
     Appends the summary report to bing-logs/YYYY-MM-DD.log.
@@ -224,7 +273,7 @@ def _save_summary(results, run_start):
         os.makedirs("bing-logs", exist_ok=True)
         today    = run_start.strftime("%Y-%m-%d")
         filepath = os.path.join("bing-logs", f"{today}.log")
-        lines = _build_summary_lines(results)
+        lines    = _build_summary_lines(results)
 
         with open(filepath, "a", encoding="utf-8") as f:
             f.write(f"Date - {run_start.strftime('%Y/%m/%d')}\n")
@@ -245,8 +294,16 @@ def _save_summary(results, run_start):
 def _run_on_device(args):
     """
     Full automation run for a single device.
-    Accepts a tuple of (serial, index, total, name) — required because ThreadPoolExecutor.map() passes a single argument per call.
-    Label uses the friendly name when provided by the launcher, otherwise falls back to "EMU-N/total".
+    Accepts a tuple of (serial, index, total, name) — required because
+    ThreadPoolExecutor.map() passes a single argument per call.
+
+    Task order: daily → search → articles
+      - daily opens the rewards page, parses earn values, stays on it
+      - search picks up from that rewards page (or falls back independently)
+      - search returns home; articles reads from home (no rewards page visit)
+
+    Recheck pass mirrors the same hand-off pattern for 1 more rewards page visit.
+    Total rewards page visits: 2 (initial + recheck).
     """
     serial, index, total, name = args
     label = f"{name}" if name else f"EMU-{index}/{total}"
@@ -286,13 +343,25 @@ def _run_on_device(args):
 
         result["startup"] = True
 
-        # ── Tasks ──────────────────────────────────────────────────
-        result["daily"]    = _run_daily(d)
-        if result["daily"] is not None and result["daily"].get("current_points") is None:
+        # ── Initial pass ───────────────────────────────────────────
+        # daily opens rewards page, parses earn values, stays on it
+        daily_result = _run_daily(d)
+        result["daily"] = daily_result
+
+        if daily_result is not None and daily_result.get("current_points") is None:
             result["errors"].append("Could not read current points balance")
-        result["articles"] = _run_articles(d)
-        result["search"]   = _run_search(d)
+
+        search_earn_y, read_earn_remaining = _extract_earn_values(daily_result)
+
+        # search picks up from rewards page (or opens its own if daily failed)
+        result["search"] = _run_search(d, search_earn_y=search_earn_y)
+
+        # articles starts from home (search returned home at end of its run)
+        result["articles"] = _run_articles(d, read_earn_remaining=read_earn_remaining)
+
+        # ── Recheck pass ───────────────────────────────────────────
         _recheck_on_device(d, result)
+
         _teardown(d)
         log("Device run complete ✓")
 
@@ -308,7 +377,8 @@ def _run_on_device(args):
 
 def main(device_names=None):
     """
-    device_names: optional dict mapping serial -> friendly name, provided by a launcher script. When None (direct run), labels fall back to EMU-N/total format.
+    device_names: optional dict mapping serial -> friendly name, provided by
+    a launcher script. When None (direct run), labels fall back to EMU-N/total format.
     """
     if device_names is None:
         device_names = {}
@@ -318,7 +388,6 @@ def main(device_names=None):
     print("        BING AUTOMATION — STARTING UP             ")
     print("=" * 52)
 
-    # Detect all connected devices (auto-restarts ADB server if needed)
     serials = detect_devices()
 
     if not serials:
@@ -326,7 +395,7 @@ def main(device_names=None):
         print("        Make sure your emulators are running and visible to ADB.")
         print("        Run `adb devices` to verify.")
         return
-    
+
     if device_names:
         serials = [s for s in serials if s in device_names]
         if not serials:
@@ -336,22 +405,18 @@ def main(device_names=None):
     total = len(serials)
     print(f"  Devices found : {total}")
     for i, s in enumerate(serials, start=1):
-        name = device_names.get(s, "")
+        name  = device_names.get(s, "")
         label = f"{name}" if name else s
         print(f"    {i}. {label} ({s})")
     print(f"  Max parallel  : {MAX_WORKERS}")
     print("=" * 52)
     print()
 
-    # Build argument tuples — executor.map passes one arg per call
     device_args = [
         (serial, index, total, device_names.get(serial, ""))
         for index, serial in enumerate(serials, start=1)
     ]
 
-    # ThreadPoolExecutor queues devices automatically when MAX_WORKERS
-    # is less than the total device count — no manual batching needed.
-    # Results are collected for the summary report printed after all threads finish.
     try:
         with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
             results = list(executor.map(_run_on_device, device_args))
@@ -365,6 +430,7 @@ def main(device_names=None):
 
         _print_summary(results)
         _save_summary(results, run_start)
+
 
 if __name__ == "__main__":
     main()

@@ -1,12 +1,19 @@
 """
 tasks/articles.py — Read Articles from the Bing Home Feed
 
-Flow:
-  Open Rewards page → Scroll to "Read to earn" row → Check done/not-done + parse
-  daily point limit → Return to home screen → Scroll into article feed → Read articles
+Fast path (normal):
+  Receive pre-parsed read_earn_remaining from daily.py → skip rewards page
+  visit entirely → go straight to home screen → scroll into feed → read.
 
-Read to Earn check:
-  - Row clickable + Y parsed → derive article target: (Y // 3) + random bonus
+Fallback path (daily.run() failed or aborted):
+  read_earn_remaining is None → self-sufficient: open Rewards page, parse,
+  then proceed as before.
+
+Sentinel:
+  read_earn_remaining is DONE → already completed today → skip immediately.
+
+Read to Earn check (fallback only):
+  - Row clickable + parsed → derive article target: (remaining // 3) + random bonus
   - Row not clickable (already done today) → skip article reading entirely
   - Row not found / parse failed (exhausted) → fall back to ARTICLE_COUNT_MIN/MAX range
 
@@ -36,6 +43,8 @@ from config import (
 )
 from core.device import log, ensure_home_screen, go_back_to_home, launch_bing, dismiss_popup
 from tasks.daily import open_rewards_page, wait_for_rewards_page
+import tasks.daily as daily
+DONE = daily.DONE
 
 
 # ── Feed navigation ────────────────────────────────────────────────
@@ -47,7 +56,7 @@ def scroll_to_articles(d):
     time.sleep(1.5)
 
 
-# ── Read to Earn check ─────────────────────────────────────────────
+# ── Read to Earn check (fallback path only) ────────────────────────
 
 def _parse_xy_from_desc(desc):
     """
@@ -95,8 +104,8 @@ def _in_safe_zone(bounds, geo):
 def _check_and_parse_read_row(row):
     """
     Called when the 'Read to earn' row is confirmed visible and in safe zone.
-    Checks clickability (done-for-day detection) and parses Y from content-desc.
-    Returns (True, y_value) on success, (False, 0) otherwise.
+    Checks clickability (done-for-day detection) and parses remaining from content-desc.
+    Returns (True, remaining) on success, (False, 0) if done, (None, 0) if parse failed.
     """
     info = row.info
 
@@ -110,7 +119,7 @@ def _check_and_parse_read_row(row):
 
     if x_value is None or y_value is None:
         log(f"  [FAIL] Could not parse read limit from content-desc: '{desc}'")
-        return False, 0
+        return None, 0
 
     remaining = y_value - x_value
     log(f"  Parsed: {x_value}/{y_value} pts earned — {remaining} pts remaining")
@@ -122,18 +131,9 @@ def _scroll_to_read_earn(d):
     Scrolls down the rewards page until the 'Read to earn' row is visible
     AND within the safe interaction zone.
 
-    On each iteration checks two selectors:
-      1. descriptionContains — active row (not yet completed)
-      2. textContains        — completed row (clickable=false, text-only node)
-
-    Once the active row is found in safe zone, delegates to _check_and_parse_read_row.
-
-    Final-scroll last-chance: after exhausting MAX_SCROLL_ATTEMPTS, does one
-    final scan before returning exhausted.
-
-    Returns (True,  y_value, "ok")        — row found, parsed, ready to read
-    Returns (False, 0,       "done")      — already completed today
-    Returns (False, 0,       "exhausted") — scroll attempts exhausted, use fallback count
+    Returns (True,  remaining, "ok")      — row found, parsed, ready to read
+    Returns (False, 0,         "done")    — already completed today
+    Returns (None,  0,         "exhausted") — scroll attempts exhausted, use fallback count
     """
     log("  Scrolling to find 'Read to earn' section...")
     geo = _get_geometry(d)
@@ -145,8 +145,13 @@ def _scroll_to_read_earn(d):
             bounds = row.info.get("bounds", {})
             if _in_safe_zone(bounds, geo):
                 log("  'Read to earn' row visible and in safe zone ✓")
-                found, y = _check_and_parse_read_row(row)
-                return (found, y, "ok") if found else (False, 0, "done")
+                found, remaining = _check_and_parse_read_row(row)
+                if found is True:
+                    return True, remaining, "ok"
+                if found is False:
+                    return False, 0, "done"
+                # found is None — parse failed
+                return None, 0, "exhausted"
             else:
                 log("  Row found but outside safe zone — scrolling into view...")
         else:
@@ -165,8 +170,12 @@ def _scroll_to_read_earn(d):
         bounds = row.info.get("bounds", {})
         if _in_safe_zone(bounds, geo):
             log("  'Read to earn' appeared on final scroll ✓")
-            found, y = _check_and_parse_read_row(row)
-            return (found, y, "ok") if found else (False, 0, "done")
+            found, remaining = _check_and_parse_read_row(row)
+            if found is True:
+                return True, remaining, "ok"
+            if found is False:
+                return False, 0, "done"
+            return None, 0, "exhausted"
 
     # Also check completed state on final scan
     done_row = d(textContains=READ_TO_EARN_DESC)
@@ -175,21 +184,20 @@ def _scroll_to_read_earn(d):
         return False, 0, "done"
 
     log("  [FAIL] 'Read to earn' not found after max scroll attempts.")
-    return False, 0, "exhausted"
+    return None, 0, "exhausted"
 
 
 def _check_read_to_earn(d):
     """
     Opens the Rewards page, scrolls to 'Read to earn', and returns the
-    article target derived from the daily point limit.
+    remaining points to earn (used to derive article target).
 
-    Returns (True,  y_value) — row active, proceed with dynamic count
-    Returns (False, 0)       — already done today, skip article reading
-    Returns (None,  0)       — rewards page unreachable or row not found (use fallback)
+    Returns (True,  remaining) — row active, proceed with dynamic count
+    Returns (False, 0)         — already done today, skip article reading
+    Returns (None,  0)         — rewards page unreachable or row not found (use fallback)
 
     Leaves the device on the Rewards page — caller must navigate back to home.
     """
-    # Dismiss any popup before opening the rewards page
     log("  [READ TO EARN] Checking for popups...")
     dismiss_popup(d)
 
@@ -203,16 +211,13 @@ def _check_read_to_earn(d):
         log("  [READ TO EARN] Rewards page did not load — will use fallback count.")
         return None, 0
 
-    found, y_value, status = _scroll_to_read_earn(d)
+    found, remaining, status = _scroll_to_read_earn(d)
 
     if status == "done":
-        return False, 0       # already completed today — skip articles
-
+        return False, 0
     if status == "exhausted":
-        return None, 0        # couldn't find row — caller uses fallback count
-
-    # status == "ok"
-    return True, y_value
+        return None, 0
+    return True, remaining
 
 
 # ── Article reading core ───────────────────────────────────────────
@@ -334,7 +339,7 @@ def read_articles(d, count, duration):
     Scrolls down when no fresh articles are in the safe interaction zone.
 
     Recovery: when MAX_FAILS is exhausted mid-read, checks device location
-    using a 3-branch strategy mirroring daily.py's collect_cards():
+    using a 3-branch strategy:
 
       BRANCH A — Park (outside Bing entirely):
         → cold relaunch → ensure_home_screen() → scroll_to_articles()
@@ -378,7 +383,6 @@ def read_articles(d, count, duration):
             scroll_to_articles(d)
             read_count = _article_loop(d, count, duration, seen_titles, start_count=read_count)
             return read_count
-        # Home screen unreachable via back — fall through to full relaunch
         log("  [RECOVER] Could not reach home screen via back — attempting full relaunch...")
 
     # BRANCH A — outside Bing entirely, or Branch B fallback
@@ -388,66 +392,74 @@ def read_articles(d, count, duration):
     read_count = _recover_via_relaunch(d, count, duration, seen_titles, read_count)
     return read_count
 
+
 # ── Task entry point ───────────────────────────────────────────────
 
-def run(d):
+def run(d, read_earn_remaining=None):
     """
     Execute the Read Articles task on an already-connected device.
-    Assumes Bing is running and the home screen is confirmed before calling.
 
-    Flow:
-      [1/3] Open Rewards page → check 'Read to earn' row → derive article count
-      [2/3] Return to home screen → scroll into article feed
-      [3/3] Run article reading loop
+    read_earn_remaining (from daily.run()):
+      int  → active row, use this value directly — skip rewards page visit.
+      DONE → already completed today — skip immediately.
+      None → daily failed or wasn't called — self-sufficient fallback:
+             open Rewards page, parse, then proceed.
 
-    Article count derivation:
-      - Row active + Y parsed → (Y // 3) + random bonus (ARTICLE_BONUS_MIN–MAX)
-      - Row already done today → skip entirely, return read_count=0, articles_limit=0
-      - Row not found / rewards page failed → fallback to ARTICLE_COUNT_MIN/MAX range
+    Always starts reading from the home screen (search.py handles the
+    Rewards page hand-off and returns home before articles.py runs).
 
     Returns a result dict with keys: read_count, articles_limit.
     Returns None only on hard abort (home screen unreachable before reading).
     """
     read_duration = (ARTICLE_DURATION_MIN, ARTICLE_DURATION_MAX)
 
-    # ── [1/3] Read to Earn check ───────────────────────────────────
-    log(" [1/3] Checking 'Read to earn' on Rewards page...")
-    found, y_value = _check_read_to_earn(d)
+    # ── Fast path: pre-parsed value provided by daily.run() ────────
+    if read_earn_remaining is not None:
 
-    if found is False:
-        # Confirmed done today — skip article reading entirely
-        log("  'Read to earn' already completed today — skipping article read.")
-        go_back_to_home(d)
-        return {"read_count": 0, "articles_limit": 0}
+        if read_earn_remaining is DONE:
+            log(" Read to Earn already completed today (confirmed by daily) — skipping.")
+            return {"read_count": 0, "articles_limit": 0}
 
-    if found is None:
-        # Rewards page unreachable or row not found — use fallback count
-        articles_limit = random.randint(ARTICLE_COUNT_MIN, ARTICLE_COUNT_MAX)
-        log(f"  Read to Earn check inconclusive — using fallback count: {articles_limit} articles.")
+        # int — use it directly, no rewards page visit needed
+        articles_limit = (read_earn_remaining // 3) + random.randint(ARTICLE_BONUS_MIN, ARTICLE_BONUS_MAX)
+        log(f" [FAST PATH] Pre-parsed remaining: {read_earn_remaining} pts")
+        log(f"  Target: {read_earn_remaining} ÷ 3 = {read_earn_remaining // 3} base + bonus = {articles_limit} total")
+
+    # ── Fallback path: daily.run() failed — open rewards page ourselves ─
     else:
-        # Row active — derive count from daily point limit + bonus
-        articles_limit = (y_value // 3) + random.randint(ARTICLE_BONUS_MIN, ARTICLE_BONUS_MAX)
-        log(f"  Target: {y_value} remaining pts ÷ 3 = {y_value // 3} base + bonus = {articles_limit} total")
+        log(" [FALLBACK] No pre-parsed value — checking 'Read to earn' on Rewards page...")
+        found, remaining = _check_read_to_earn(d)
+
+        if found is False:
+            log("  'Read to earn' already completed today — skipping article read.")
+            go_back_to_home(d)
+            return {"read_count": 0, "articles_limit": 0}
+
+        if found is None:
+            articles_limit = random.randint(ARTICLE_COUNT_MIN, ARTICLE_COUNT_MAX)
+            log(f"  Read to Earn check inconclusive — using fallback count: {articles_limit} articles.")
+        else:
+            articles_limit = (remaining // 3) + random.randint(ARTICLE_BONUS_MIN, ARTICLE_BONUS_MAX)
+            log(f"  Target: {remaining} remaining pts ÷ 3 = {remaining // 3} base + bonus = {articles_limit} total")
+
+        # _check_read_to_earn() leaves us on the Rewards page — navigate back first
+        log(" Returning to home screen before article feed...")
+        go_back_to_home(d)
 
     log(f" Starting article read — Target: {articles_limit} articles, "
         f"{ARTICLE_DURATION_MIN}–{ARTICLE_DURATION_MAX}s each.")
 
-    # ── [2/3] Return to home screen ────────────────────────────────
-    # _check_read_to_earn() leaves us on the Rewards page — navigate back first.
-    log(" [2/3] Returning to home screen before article feed...")
-    go_back_to_home(d)
-
+    # ── Confirm home screen and scroll into feed ───────────────────
     if not ensure_home_screen(d):
         log("[ABORT] Could not confirm home screen before reading articles.")
         return None
 
     scroll_to_articles(d)
 
-    # ── [3/3] Article reading loop ─────────────────────────────────
-    log(f" [3/3] Reading articles...")
+    # ── Article reading loop ───────────────────────────────────────
+    log(" Reading articles...")
     actual_reads = read_articles(d, articles_limit, read_duration)
 
-    # Return to Bing home screen after reading
     log(" Returning to home screen...")
     go_back_to_home(d)
 
