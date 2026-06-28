@@ -416,33 +416,6 @@ def collect_cards(d, earn_keyword, total_cards, section_label):
 
 # ── Earn row parsing (called after card collection) ────────────────
 
-def _scroll_to_top(d):
-    """
-    Scrolls the rewards page back to the top using uiautomator2's built-in
-    scroll-to-beginning. Falls back to a fixed number of upward swipes if
-    no scrollable container is found.
-    """
-    log("  Scrolling rewards page back to top...")
-    try:
-        scrollable = d(scrollable=True)
-        if scrollable.exists:
-            scrollable.scroll.toBeginning(steps=40)
-            time.sleep(1.5)
-            return
-    except Exception as e:
-        log(f"  [WARN] scroll.toBeginning failed ({e.__class__.__name__}) — falling back to swipes.")
-
-    # Fallback: swipe down (scroll up) several times
-    geo = _get_geometry(d)
-    for _ in range(6):
-        try:
-            # Swipe direction reversed: finger moves DOWN to scroll content UP to top
-            d.swipe(geo["cx"], geo["swipe_end"], geo["cx"], geo["swipe_start"], 0.35)
-        except Exception:
-            pass
-        time.sleep(1.0)
-
-
 def _parse_search_earn(d):
     """
     Scrolls to find the 'Search to earn' row and parses its daily point limit.
@@ -672,11 +645,9 @@ def run(d):
             search_earn_y       = None
             read_earn_remaining = None
         else:
-            _scroll_to_top(d)
             search_earn_y       = _parse_search_earn(d)
             read_earn_remaining = _parse_read_earn(d)
     else:
-        _scroll_to_top(d)
         search_earn_y       = _parse_search_earn(d)
         read_earn_remaining = _parse_read_earn(d)
 
