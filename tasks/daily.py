@@ -156,6 +156,8 @@ def _get_geometry(d):
     w = d.info.get("displayWidth",  900)
     h = d.info.get("displayHeight", 1600)
     return {
+        "w":           w,
+        "h":           h,
         "cx":          w // 2,
         "swipe_start": int(h * 0.70),
         "swipe_end":   int(h * 0.35),
@@ -165,11 +167,14 @@ def _get_geometry(d):
 
 
 def _scroll_down_one(d):
-    geo = _get_geometry(d)
+    geo   = _get_geometry(d)
+    x     = geo["cx"]          + random.randint(-int(geo["w"] * 0.13), int(geo["w"] * 0.13))
+    start = geo["swipe_start"] + random.randint(-int(geo["h"] * 0.04), int(geo["h"] * 0.04))
+    end   = geo["swipe_end"]   + random.randint(-int(geo["h"] * 0.04), int(geo["h"] * 0.04))
     try:
-        d.swipe(geo["cx"], geo["swipe_start"], geo["cx"], geo["swipe_end"], 0.35)
+        d.swipe(x, start, x, end, 0.35)
     except Exception as e:
-        log(f"  [WARN] Swipe failed (likely system UI in foreground): {e.__class__.__name__} — skipping scroll.")
+        log(f"  [WARN] Swipe failed: {e.__class__.__name__} — skipping scroll.")
     time.sleep(1.8)
 
 
